@@ -1,0 +1,9 @@
+/build/
+/backups/
+*.exe
+*.dll
+*.obj
+*.pdb
+*.log
+/mod/*.txt
+/mod/calibration*.lua*
