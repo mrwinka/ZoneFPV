@@ -1,10 +1,14 @@
 # ZoneFPV — FPV Drone Camera
 
-Source snapshot for **0.2.0 RC2**, a public-beta UE4SS mod for STALKER 2 on Windows x64.
+Source snapshot for **0.2.0 RC3**, a public-beta UE4SS mod for STALKER 2 on Windows x64.
 
 [Nexus Mods page](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
 
 This repository provides the source for review and local compilation. It does not contain a prebuilt executable, UE4SS binaries, game assets, personal settings or logs. The Nexus archive is undergoing quarantine review; this source publication does not establish antivirus clearance.
+
+## Ready-to-install release
+
+Download **ZoneFPV-0.2.0-RC3.zip** from [RC3 Releases](https://github.com/mrwinka/ZoneFPV/releases/tag/v0.2.0-rc3). RC2 remains available separately. RC3 respects the configured UE4SS game-thread method (including EngineTick) and improves console/focus handling. The user reported successful in-game testing; confirmation on the original 2.0.6 / UE4SS 527a483b reporter setup remains pending. See CHANGELOG.md and RELEASE_STATUS.md.
 
 ## Build the native helper
 

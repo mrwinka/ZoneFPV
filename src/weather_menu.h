@@ -270,7 +270,8 @@ inline void pump(bool gameFocus){
     if(!eligible&&hotkeyRegistered){UnregisterHotKey(nullptr,6006);hotkeyRegistered=false;}
     MSG message{};while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)){
         if(message.message==WM_HOTKEY&&message.wParam==6006){
-            if(window&&IsWindowVisible(window))hide();else show();continue;
+            // A queued hotkey must not reopen/activate our menu after Alt+Tab.
+            if(eligible){if(window&&IsWindowVisible(window))hide();else show();}continue;
         }
         HWND dialog=osd::focused()?osd::editor:window.load();
         if(!dialog||!IsDialogMessageW(dialog,&message)){TranslateMessage(&message);DispatchMessageW(&message);}

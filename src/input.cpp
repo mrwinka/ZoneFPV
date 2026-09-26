@@ -36,7 +36,12 @@ std::vector<Device> devices(){
 bool gameFocused(){
     thread_local HWND cached=nullptr;thread_local bool result=false;
     thread_local ULONGLONG checked=0;const auto foreground=GetForegroundWindow();const auto now=GetTickCount64();if(foreground==cached&&now-checked<1000)return result;cached=foreground;checked=now;
-    DWORD pid=0;GetWindowThreadProcessId(GetForegroundWindow(),&pid);
+    // UE4SS GUI Console and other tools may share the game's PID. Only the
+    // Unreal viewport is eligible for our hotkeys, input and overlay placement.
+    wchar_t windowClass[128]{};
+    if(!foreground||!IsWindowVisible(foreground)||IsIconic(foreground)||
+       !GetClassNameW(foreground,windowClass,128)||wcscmp(windowClass,L"UnrealWindow")!=0){result=false;return false;}
+    DWORD pid=0;GetWindowThreadProcessId(foreground,&pid);
     HANDLE p=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid);
     if(!p){result=false;return false;}
     wchar_t path[32768];DWORD size=32768;

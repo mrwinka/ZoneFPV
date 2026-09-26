@@ -22,7 +22,10 @@ function M.start(root)
     -- Encode the complete literal script path, preserving Unicode and preventing
     -- cmd.exe expansion of %, &, ! and other legal filename characters.
     local script="& '"..(root..'Start-Bridge.ps1'):gsub("'","''").."'"
-    local ok=os.execute('powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand '..encodedCommand(script))
+    -- Do not set WindowStyle here: PowerShell can inherit UE4SS's console,
+    -- and hiding that shared window also hides the user's console. The script
+    -- starts the separate bridge process hidden; this bootstrap never hides it.
+    local ok=os.execute('powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand '..encodedCommand(script))
     if ok then return true end
     return false,'See bridge-start-error.log / input-bridge-error.log'
 end

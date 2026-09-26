@@ -1,5 +1,15 @@
 # Requirements / dependencies
 
+## 2.0.6 compatibility report and RC3 release candidate (2026-09-27)
+
+**Released RC2 explicitly requests ProcessEvent.** A user reported failure to activate FPV, stutters and a disappearing UE4SS console on game 2.0.6, UE4SS commit `527a483b`, with the runtime package at https://www.nexusmods.com/stalker2heartofchornobyl/mods/2810 and EngineTick configured. This configuration is not supported by RC2. Do not switch it to ProcessEvent to work around ZoneFPV: the reporter states that doing so crashes their game.
+
+**RC3 release candidate removes the ProcessEvent override.** Camera work is posted through the one-argument `ExecuteInGameThread(callback)` API, which respects UE4SS's configured default, including EngineTick. It never probes or switches hooks on failure and never edits UE4SS settings. Keep the settings supplied for your runtime/game version (the report uses `DefaultExecuteInGameThreadMethod = EngineTick`, `HookEngineTick = 1`, `HookProcessLocalScriptFunction = 1`). Follow the runtime package's own instructions; do not combine old and new fixes blindly.
+
+The startup bootstrap no longer applies `WindowStyle Hidden` to a potentially inherited UE4SS console; only the separately launched input helper is hidden. Input remains background/nonexclusive. The native helper now restricts game hotkeys/OSD targeting to the Unreal viewport rather than every window sharing the game PID.
+
+These are code fixes awaiting in-game confirmation on the reported setup, not certification of patch 2.0.6 support. The console/focus cause and reported stutters have not been reproduced locally. Test console visibility, F6/F8, flight, Alt+Tab, overlays and shutdown before treating this build as validated.
+
 Windows 10/11 x64, STALKER 2 PC, and a **game-version-compatible UE4SS runtime** installed in `Stalker2/Binaries/Win64/ue4ss` with a working loader.
 
 The installer copies ZoneFPV only. It does not replace an existing UE4SS runtime, proxy DLL, engine signatures or other mods. This avoids silently breaking an existing mod installation. No compiler, Python or Visual C++ redistributable is required for the statically linked bridge.

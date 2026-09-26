@@ -349,14 +349,9 @@ end
 -- At most one queued game-thread callback. Never access Unreal objects on the worker.
 local nextIdleUpdate=0
 local perfNext,perfTotal,perfMax,perfCount=0,0,0,0
--- EngineTickAvailable reports symbol availability, not a successfully installed hook.
--- This game's compatibility configuration disables EngineTick; always use the
--- verified ProcessEvent path. Never select a scheduler merely by symbol presence.
-local function dispatch(callback)
-    if EGameThreadMethod and EGameThreadMethod.ProcessEvent then
-        ExecuteInGameThread(callback,EGameThreadMethod.ProcessEvent)
-    else ExecuteInGameThread(callback) end
-end
+-- Let UE4SS use its configured method. Explicit ProcessEvent dispatch can install
+-- an incompatible hook even when the user's runtime requires EngineTick.
+local scheduler=dofile(here..'scheduler.lua').new(ExecuteInGameThread,clock,log)
 local function pump()
     if pending then
         if not watchdogReported and clock()-pendingSince>3 then
@@ -371,9 +366,10 @@ local function pump()
     if not session and not request then
         local now=clock();if now<nextIdleUpdate then return false end;nextIdleUpdate=now+0.05
     end
+    if not scheduler.ready() then return false end
     pending=true
     pendingSince=clock();watchdogReported=false;stage='waiting for game thread'
-    dispatch(function()
+    local queued=scheduler.post(function()
         local started=clock()
         local ok,err=xpcall(function()
             update()
@@ -400,8 +396,9 @@ local function pump()
         pending=false
         stage='idle'
     end)
+    if not queued then pending=false;stage='game-thread dispatch failed' end
     return false
 end
-LoopAsync(1,pump)
-log('Camera scheduler: ProcessEvent / 1 ms bounded queue')
+LoopAsync(4,pump)
+log('Camera scheduler: UE4SS configured default / 4 ms bounded queue (no forced hook)')
 log('Loaded. F8 toggles FPV. Input bridge required; physics 240 Hz.')
