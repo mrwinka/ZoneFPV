@@ -9,6 +9,8 @@ inline HWND overlay=nullptr,editor=nullptr,preview=nullptr,list=nullptr,sizeBox=
 inline bool editing=false,enabled=true,cursorMode=false;
 inline int selected=0,drag=-1,crossStyle=0;
 inline ULONGLONG nextPoll=0,lastChange=0,lastSeq=0;
+inline RECT overlayPlacement{};
+inline HWND overlayOrder=nullptr;
 struct Data {bool active=false;double speed=0,altitude=0,distance=0,pitch=0,roll=0,heading=0,home=0,seconds=0,climb=0,throttle=0;};
 inline Data data;
 struct Item{double x,y;int size,color;bool visible;};
@@ -179,7 +181,13 @@ inline void pump(HWND game,HWND menuWindow){
     if(!overlay){WNDCLASSW c{};c.hInstance=GetModuleHandleW(nullptr);c.lpfnWndProc=overlayProc;c.lpszClassName=L"ZoneFPVOSD";c.hCursor=LoadCursorW(nullptr,MAKEINTRESOURCEW(32512));RegisterClassW(&c);overlay=CreateWindowExW(WS_EX_TOPMOST|WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,c.lpszClassName,L"",WS_POPUP,0,0,1,1,nullptr,nullptr,c.hInstance,nullptr);SetLayeredWindowAttributes(overlay,RGB(0,0,0),255,LWA_COLORKEY);}
     if(cursorMode!=menuOpen){cursorMode=menuOpen;SetWindowLongPtrW(overlay,GWL_EXSTYLE,WS_EX_TOPMOST|WS_EX_LAYERED|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW|(menuOpen?0:WS_EX_TRANSPARENT));}
     RECT rc{};GetClientRect(game,&rc);if(rc.right<1||rc.bottom<1)return;screenAspect=static_cast<double>(rc.right)/rc.bottom;if(editing)SetWindowPos(preview,nullptr,0,0,800,static_cast<int>(std::min(530.,800./screenAspect)),SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);POINT pos{};ClientToScreen(game,&pos);
-    SetWindowPos(overlay,menuOpen?menuWindow:HWND_TOPMOST,pos.x,pos.y,rc.right,rc.bottom,SWP_NOACTIVATE|SWP_SHOWWINDOW);
+    const RECT placement{pos.x,pos.y,pos.x+rc.right,pos.y+rc.bottom};
+    const auto order=menuOpen?menuWindow:HWND_TOPMOST;
+    if(!IsWindowVisible(overlay)||overlayOrder!=order||!EqualRect(&overlayPlacement,&placement)){
+        if(SetWindowPos(overlay,order,pos.x,pos.y,rc.right,rc.bottom,SWP_NOACTIVATE|SWP_SHOWWINDOW)){
+            overlayPlacement=placement;overlayOrder=order;
+        }
+    }
     InvalidateRect(overlay,nullptr,FALSE);
 }
 inline void cleanup(){overlaySurface.clear();previewSurface.clear();for(auto& family:fonts)for(auto f:family)if(f)DeleteObject(f);for(int i=0;i<5;++i)if(glyphDC[i]){SelectObject(glyphDC[i],glyphOld[i]);DeleteObject(glyphBitmap[i]);DeleteDC(glyphDC[i]);glyphDC[i]=nullptr;}if(overlay)DestroyWindow(overlay);if(editor)DestroyWindow(editor);}

@@ -16,7 +16,15 @@ inline IDirectInputDevice8W* handle=nullptr;
 inline unsigned opened=0;
 inline DWORD extraAxes[2]{};
 inline unsigned key(const GUID& g){unsigned h=2166136261u;const auto* p=reinterpret_cast<const unsigned char*>(&g);for(int i=0;i<16;++i)h=(h^p[i])*16777619u;return 1000+(h%2000000000u);}
-inline BOOL CALLBACK enumerate(const DIDEVICEINSTANCEW* d,void* context){auto& out=*static_cast<std::vector<Device>*>(context);out.push_back({key(d->guidInstance),d->tszInstanceName,d->guidInstance,1,d->guidProduct.Data1});return DIENUM_CONTINUE;}
+inline bool dualShock4(DWORD product){
+    if((product&0xffff)!=0x054c)return false;
+    const DWORD pid=product>>16;return pid==0x05c4||pid==0x09cc||pid==0x0ba0;
+}
+inline BOOL CALLBACK enumerate(const DIDEVICEINSTANCEW* d,void* context){
+    auto& out=*static_cast<std::vector<Device>*>(context);
+    const auto name=dualShock4(d->guidProduct.Data1)?L"DualShock 4 [DirectInput] - "+std::wstring(d->tszInstanceName):std::wstring(d->tszInstanceName);
+    out.push_back({key(d->guidInstance),name,d->guidInstance,1,d->guidProduct.Data1});return DIENUM_CONTINUE;
+}
 inline void scan(){
     if(!api)DirectInput8Create(GetModuleHandleW(nullptr),DIRECTINPUT_VERSION,IID_IDirectInput8W,reinterpret_cast<void**>(&api),nullptr);
     std::vector<Device> found;

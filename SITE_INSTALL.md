@@ -1,39 +1,55 @@
-# Installation — ZoneFPV 0.2.0 RC2
+# ZoneFPV installation and troubleshooting / Установка и устранение неполадок
 
-## English — copy to the mod page
+## English
 
-**Requirements:** Windows 10/11 x64, STALKER 2 PC, a working UE4SS runtime compatible with your exact game update. UE4SS is not included. See DEPENDENCIES.md for the tested base build and compatibility patch. This is a UE4SS mod with a native helper, not a PAK mod. Borderless/windowed mode is recommended for the external OSD.
+1. Install UE4SS compatible with your exact game update. See [requirements](DEPENDENCIES.md) and [UE4SS releases](https://github.com/UE4SS-RE/RE-UE4SS/releases). Keep the runtime's required settings; EngineTick is supported.
+2. Download the complete ZoneFPV installer ZIP from [Nexus](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) or the [GitHub release list](https://github.com/mrwinka/ZoneFPV/releases). On GitHub, choose the attached ZoneFPV ZIP, not the automatically generated Source code archive.
+3. Close the game, extract the ZIP into a writable folder and run **Setup.cmd**. If prompted, select the game's installation folder containing `Stalker2`.
+4. Connect a transmitter in USB Joystick mode or a gamepad. Launch the game and load a save. The input helper starts automatically.
+5. Press **F6**, select the controller and verify all four control directions. Use guided calibration if the mapping is wrong.
+6. Lower throttle for Acro/Angle or center it for 3D, then press **F8**. F8 exits FPV; F9 resets the drone.
 
-1. Install and verify compatible UE4SS following the compatibility patch author's instructions for your game version.
-2. Close the game. Extract the entire ZoneFPV ZIP to a folder; do not run Setup from inside the archive.
-3. Run **Setup.cmd**. It detects Steam libraries or asks you to select the game root containing the `Stalker2` folder. Use administrator privileges only if access to that installation folder is denied.
-4. Connect a controller; transmitters must use **USB Joystick** mode. Start the game normally and load a save.
-5. Press **F6**, select the device in Controller, and verify stick directions. Initial profiles are supplied; use guided calibration if a mapping is wrong.
-6. **F8** enters/exits FPV. **F9** returns the camera home. Acro/Angle require low throttle, while 3D requires centered throttle, unless nonzero-throttle entry is enabled. A centered gamepad throttle stick is 50% in Acro/Angle. Keys can be changed in Interface.
+Main FPV is the default. Alternative FPV leaves the player's simulation anchor at launch; remote NPC simulation and collision can be incomplete. Geometry loading distance is selectable through 5×; larger values can reduce FPS and do not ensure the whole map is loaded.
 
-**Updating:** close the game and run Setup from the new extracted release. Existing preferences/calibrations are preserved; backups are created beside the installer. Keep that folder if you need the backup.
+Updates preserve installed preferences/calibration and back up the previous mod beside the installer. To remove ZoneFPV, close the game and run `Uninstall.ps1 -GameRoot 'game folder'` in PowerShell. UE4SS and other mods remain installed.
 
-**Uninstalling:** close the game, open PowerShell in the extracted release folder and run `./Uninstall.ps1 -GameRoot "D:\path\to\S.T.A.L.K.E.R. 2 Heart of Chornobyl"` with your actual path. It disables/moves ZoneFPV while retaining a backup; it leaves UE4SS and other mods alone.
+For an optional higher object limit, use F6 → Rendering → `gc.MaxObjectsInGame` → Save to Engine.ini, then restart the game. This affects the entire game and persists after FPV; more loaded objects can use more RAM and worsen loading/GC pauses. [Details and default reset](OBJECT_LIMIT.md).
 
-**F6/F8 do nothing / No response from mod:** verify UE4SS loads on your game build; inspect `Stalker2/Binaries/Win64/ue4ss/UE4SS.log` and any `input-bridge-error.log` / `bridge-start-error.log` in `ue4ss/Mods/ZoneFPV`. The helper is unsigned and may be rejected by restrictive application-control policies. Do not disable Windows protection. If custom menu keys are lost, close the game and remove only `bindings.txt` from ZoneFPV to restore F6/F8/F9.
+### Troubleshooting
 
-**Controller troubleshooting:** select one physical or virtual device, check its live axes and try the matching profile. Steam Input, Bluetooth and custom transmitter models can change mappings. Brand presets are starting layouts, not a guarantee for every model. After disconnecting, reconnect, select the device and re-enter flight.
+- **Installer cannot find the game:** select the installation folder containing `Stalker2`. If access is denied, run Setup.cmd as administrator.
+- **F6/F8 do nothing:** confirm a save is loaded and ZoneFPV is enabled in `ue4ss/Mods/mods.txt`; check `UE4SS.log`, `Mods/ZoneFPV/input-bridge-error.log` and `bridge-start-error.log`. A helper menu alone does not prove the Lua mod loaded.
+- **Wrong axes or no device:** select the physical/virtual interface you use, check directions and calibrate. Custom transmitter models can use different channel orders. A physical Sony controller and a virtual Xbox controller may appear separately.
+- **FPV will not enter:** check throttle neutral for the selected flight mode and that controller data is current.
+- **Black CNPP view or quest fog:** these regional effects remain a known limitation, not a confirmed RC4 fix.
+- **Clipping or missing distant geometry:** try main FPV, allow streaming time and use a suitable loading distance. Unloaded collision cannot be guaranteed by this mod.
+- **Lost custom menu key:** close the game and remove only `bindings.txt` from the installed mod to restore F6/F8/F9.
 
-## Русский — для страницы мода
+For a bug report, include ZoneFPV/game/UE4SS versions, controller/interface, main/alternative and Acro/Angle/3D modes, loading multiplier, other mods, reproduction steps and relevant logs/video.
 
-**Требования:** Windows 10/11 x64, STALKER 2 на ПК и работающий UE4SS, совместимый с вашей версией игры. UE4SS скачивается отдельно; ссылки и проверенная базовая сборка — в DEPENDENCIES.md. Это не PAK: не кладите архив в `~mods`. Для внешнего OSD рекомендуется оконный режим или окно без рамки.
+## Русский
 
-1. Установите совместимый UE4SS по инструкции автора патча для вашей версии игры.
-2. Закройте игру. Полностью распакуйте ZIP в отдельную папку.
-3. Запустите **Setup.cmd**. Установщик найдёт Steam-библиотеку или попросит выбрать корень игры с папкой `Stalker2`. Права администратора нужны только при отказе в доступе к папке игры.
-4. Подключите геймпад или пульт в режиме **USB Joystick**, запустите игру обычным способом и загрузите сохранение.
-5. Нажмите **F6**, выберите устройство во вкладке «Контроллер», проверьте направления. Если готовый профиль не подходит — выполните калибровку.
-6. **F8** — вход/выход из FPV, **F9** — возврат камеры домой. Для Acro/Angle нужен газ внизу; для 3D — посередине. Вход с ненулевым газом можно разрешить в меню. У геймпада центр стика в Acro/Angle означает 50% газа. Кнопки меняются во вкладке «Интерфейс».
+1. Установите UE4SS, совместимый с вашей версией игры. Ссылки и требования — [DEPENDENCIES.md](DEPENDENCIES.md). Сохраните настройки, рекомендованные автором UE4SS; EngineTick поддерживается.
+2. Скачайте установочный ZIP ZoneFPV с [Nexus](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) или из [списка выпусков GitHub](https://github.com/mrwinka/ZoneFPV/releases). На GitHub нужен приложенный ZIP ZoneFPV, а не автоматический архив Source code.
+3. Закройте игру, распакуйте архив в доступную для записи папку и запустите **Setup.cmd**. При необходимости выберите папку установки, содержащую `Stalker2`.
+4. Подключите пульт в режиме USB Joystick или геймпад, запустите игру и загрузите сохранение. Программа ввода запускается автоматически.
+5. Нажмите **F6**, выберите устройство и проверьте четыре направления управления. При необходимости выполните калибровку.
+6. В Acro/Angle опустите газ, в 3D поставьте его по центру. **F8** включает/выключает FPV; **F9** возвращает дрон к старту.
 
-**Обновление:** закройте игру и запустите Setup из новой версии. Настройки сохранятся, резервная копия появится рядом с установщиком.
+Основной FPV включён по умолчанию. Альтернативный оставляет игрока на старте: NPC вдали не подгружаются вслед за дроном, коллизии могут быть неполными. Множитель подгрузки до 5× увеличивает нагрузку и не гарантирует загрузку всей карты.
 
-**Удаление:** при закрытой игре откройте PowerShell в папке распакованного релиза и выполните `./Uninstall.ps1 -GameRoot "D:\путь\к\папке игры"`. Скрипт отключит и перенесёт мод в резервную папку, сохранив UE4SS и другие моды.
+При обновлении сохраняются настройки и калибровки, предыдущий мод копируется в `backups` рядом с установщиком. Для удаления при закрытой игре выполните `Uninstall.ps1 -GameRoot 'папка игры'` в PowerShell.
 
-**Нет реакции на F6/F8:** проверьте совместимость и загрузку UE4SS, затем UE4SS.log и журналы моста в `ue4ss/Mods/ZoneFPV`. «Нет ответа мода» не обязательно связано с калибровкой. Не отключайте защиту Windows. Если забыли назначенную кнопку меню, при закрытой игре удалите только `bindings.txt` в папке ZoneFPV.
+Лимит объектов можно изменить вручную: F6 → «Прорисовка» → `gc.MaxObjectsInGame` → «Сохранить в Engine.ini», затем перезапустить игру. Это общая настройка всей игры, она остаётся после FPV. Дополнительные объекты могут увеличить расход RAM, время загрузки и паузы очистки памяти. [Подробности и возврат по умолчанию](OBJECT_LIMIT.md).
 
-**Неверные оси:** выберите нужный физический/виртуальный интерфейс и подходящий профиль, при необходимости откалибруйте. USB/Bluetooth, Steam Input и настройка модели передатчика могут менять раскладку. После отключения устройства подключите его снова, выберите в меню и повторно войдите в FPV.
+### Если что-то не работает
+
+- Нет меню/FPV: загрузите сохранение, проверьте включение ZoneFPV в `mods.txt` и журналы `UE4SS.log`, `input-bridge-error.log`, `bridge-start-error.log`.
+- Неверные оси: выберите нужный интерфейс и выполните калибровку. Пользовательская модель пульта или Steam Input могут менять каналы.
+- FPV не включается: проверьте нейтраль газа для выбранного режима и наличие свежих данных устройства.
+- Чёрный эффект у ЧАЭС/квестовый туман: известные ограничения, исправление не заявлено.
+- Пролёты сквозь объекты/пропавшая геометрия: используйте основной режим и дайте миру прогрузиться. Отсутствующую коллизию мод гарантировать не может.
+- Потеря кнопки меню: при закрытой игре удалите только `bindings.txt` из папки мода.
+
+Для отчёта укажите версии мода/игры/UE4SS, устройство и интерфейс, оба выбранных режима, множитель подгрузки, другие моды и шаги воспроизведения; приложите журнал или видео.
+

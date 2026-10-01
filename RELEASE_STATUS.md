@@ -1,29 +1,17 @@
-# ZoneFPV 0.2.0 RC3 — 2026-09-27
+# ZoneFPV 0.2.0 RC4 — 2026-10-02
 
-Public release candidate. On 2026-09-27 the user reported testing in-game successfully. The exact game/UE4SS versions and individual console/focus/stutter checks were not supplied, so this does not yet establish resolution on the original reporter's 2.0.6/UE4SS 527a483b setup. Native MSVC /W4 /WX build, RadioMaster input probe, static syntax checks for 29 Lua files and installer preference-preservation checks passed. New scheduler regression tests cover configured-default dispatch, deferred execution and failure backoff without hook fallback. Execution of Lua tests remains blocked by Windows App Control after a retry with the user's current permissions on 2026-09-27; security settings were not changed.
+The user tested the current RC4 build and reports that everything appears to work. They authorized publishing RC4 as a new version, preserving RC2/RC3 and the existing general Nexus description and mirror. Final publication is being prepared.
 
-Required reporter checks: preserve EngineTick settings; start with the UE4SS console open; verify the log says `UE4SS configured default`; load a save and test F6/F8, flight and exit; Alt+Tab to console/overlays and check focus; compare stutters with RC2; return UE4SS.log and mod/stall-diagnostic.txt if still failing.
+Actual startup object capacity has not been verified. User feedback and automated checks do not establish crash-free behavior or measured in-game FPS gains. Higher geometry multipliers through full 5× can reduce FPS and increase RAM use. Unloaded geometry and missing collision remain possible. The CNPP black regional effect remains unresolved; checkpoint quest fog is unchanged. Physical DS4 DirectInput testing is pending.
 
-## Previous RC2 results — 2026-09-21
+The optional `gc.MaxObjectsInGame` startup override affects the whole game and requires a full restart. Save/Game default changes require explicit user input, back up existing Engine.ini before a change and preserve unrelated settings and supported encoding. Higher capacity may increase RAM, loading and garbage collection costs. Installation/startup do not edit this setting automatically.
 
-Previous RC1 installation preserved all 16 existing preference/calibration files, and the installed executable detected DualSense Wireless Controller. The user reported the version working; this does not individually confirm all feature checks below.
+Completed checks for the tested RC4 code:
 
-Passed:
-- RC2 camera-tilt scrollbar and physical mouse-wheel scrolling in the native menu.
-- RC2 native rebuild, repeated profile/OSD tests and isolated two-install preservation test.
-- MSVC C++17 /W4 /WX build; native smoke run and protocol v4 output.
-- Sony vendor identification, RadioMaster/Jumper/FlySky profile detection, nine profile variants, no overwrite of manual calibration, backup on explicit replacement, four-step calibration direction confirmation.
-- OSD persistence, corrupt-file rejection, old-layout migration, actual Betaflight glyph decode, German localization.
-- Visual inspection: tab layout, German, dark/light theme, disconnected controller warning.
-- Steam auto-discovery and two consecutive installer runs against an isolated fixture; settings, other mods and runtime preserved; deployed file hashes verified.
-- DualSense live input read and automatic initial profile creation.
-- Static Lua syntax analysis: all 27 runtime/test files pass.
+- Optimized MSVC x64 build with warnings treated as errors passed.
+- All 19 Lua suites and syntax loading for 45 Lua files passed, including uniform 5× on all ten original geometry grids and exact restoration.
+- Native controller, OSD and six Engine.ini configuration contract tests passed. Tests cover positive int32 validation, missing file creation, backups, duplicate handling, comments, targeted reset, UTF-8/UTF-16LE preservation and rejection of unsupported files.
+- The tested ZIP contained 86 allowlisted files with verified CRC and SHA-256 manifest. Personal settings, Engine.ini, backups and retired experiments were excluded.
+- Installation with the game closed verified all 31 updated mod files against their packaged hashes and preserved all 45 existing preference/report files exactly. The previous installation was backed up.
 
-Not yet verified:
-- Lua behavioral tests: Windows App Control blocks the existing test interpreter. No security controls were changed. Test.ps1 accepts a Lua 5.4 interpreter on an approved environment.
-- In-game Angle leveling, inverted 3D, remapped hotkeys, all analog profiles and physical disconnect/reconnect.
-- Other controller hardware, Bluetooth/virtual-device combinations, clean-machine installation and additional game versions.
-
-Release candidate only. Do not advertise universal compatibility or measured FPS gains. New bridge is unsigned; application control may reject it on other computers. UE4SS and its game-specific compatibility patch are separate dependencies. RC2 explicitly requests ProcessEvent dispatch where the runtime exposes this option; in-game regression checking after this change remains outstanding.
-
-RC2 deployment: installed file hashes match the release sources; 30 existing state/settings/calibration files retained byte-for-byte. Installed bridge --probe exits successfully; no controller was enumerated at this final check. No new in-game flight test was performed after installation.
+The final RC4 package contains 86 allowlisted files, with CRC and every SHA-256 manifest entry verified. Its native executable is unchanged from the tested candidate; the runtime change for release is the RC4 version log. Syntax loading of all 45 Lua files and all 20 lifecycle/adapter contract tests passed again for the final version. The package excludes personal settings, Engine.ini, backups and retired experiments. Publication and scan status are shown on the GitHub/Nexus release pages.

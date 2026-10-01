@@ -20,6 +20,7 @@ namespace fs=std::filesystem;
 #include "osd.h"
 #include "controllers.h"
 #include "controller_profiles.h"
+#include "object_limit.h"
 #include "weather_menu.h"
 using Axes=std::array<DWORD,8>;
 Axes axes(const JOYINFOEX& j){ return {j.dwXpos,j.dwYpos,j.dwZpos,j.dwRpos,j.dwUpos,j.dwVpos,controllers::extraAxes[0],controllers::extraAxes[1]}; }
@@ -85,7 +86,7 @@ int calibrate(UINT id,const fs::path& output){
 int wmain(int argc,wchar_t** argv){
     wchar_t module[32768];GetModuleFileNameW(nullptr,module,32768);
     fs::path root=fs::path(module).parent_path();
-    bool probe=false,cal=false,settings=false;int selected=-1;unsigned seconds=0;DWORD parentPid=0;
+    bool probe=false,cal=false,settings=false,limitSet=false,limitReset=false;int objectCount=0,selected=-1;unsigned seconds=0;DWORD parentPid=0;
     for(int i=1;i<argc;++i){
         std::wstring arg=argv[i];
         if(arg==L"--probe")probe=true;
@@ -95,7 +96,22 @@ int wmain(int argc,wchar_t** argv){
         else if(arg==L"--seconds" && i+1<argc)seconds=static_cast<unsigned>(_wtoi(argv[++i]));
         else if(arg==L"--parent-pid" && i+1<argc)parentPid=static_cast<DWORD>(_wtoi(argv[++i]));
         else if(arg==L"--output-dir" && i+1<argc)root=argv[++i];
-        else {std::cerr<<"Usage: ZoneFPVInput [--probe|--calibrate] [--device N] [--seconds N] [--parent-pid PID] [--output-dir PATH]\n";return 1;}
+        else if(arg==L"--object-limit" && i+1<argc){
+            if(!objectLimit::parse(argv[++i],objectCount)){std::cerr<<"Object limit must be a positive 32-bit decimal integer.\n";return 1;}
+            limitSet=true;
+        }
+        else if(arg==L"--object-limit-default")limitReset=true;
+        else {std::cerr<<"Usage: ZoneFPVInput [--probe|--calibrate|--settings] [--device N] [--seconds N] [--parent-pid PID] [--output-dir PATH]\n"
+            "Config: ZoneFPVInput --object-limit COUNT | --object-limit-default (restart game after change)\n";return 1;}
+    }
+    if(limitSet||limitReset){
+        if(limitSet&&limitReset){std::cerr<<"Choose either a custom limit or reset to default.\n";return 1;}
+        const auto path=objectLimit::defaultEnginePath();
+        const auto result=limitReset?objectLimit::reset(path):objectLimit::set(path,objectCount);
+        if(!result.ok){std::wcerr<<L"Engine.ini update failed: "<<result.error<<L"\n";return 2;}
+        std::wcout<<(result.changed?L"Engine.ini updated. Restart game.\n":L"Engine.ini already matches.\n");
+        if(!result.backupPath.empty())std::wcout<<L"Backup: "<<result.backupPath.c_str()<<L"\n";
+        return 0;
     }
     auto available=devices();
     for(const auto& d:available){

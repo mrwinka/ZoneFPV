@@ -1,6 +1,6 @@
 # ZoneFPV — FPV Drone Camera
 
-Source snapshot for **0.2.0 RC3**, a public-beta UE4SS mod for STALKER 2 on Windows x64.
+Source snapshot for **0.2.0 RC4**, a public-beta UE4SS mod for STALKER 2 on Windows x64.
 
 [Nexus Mods page](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
 
@@ -8,7 +8,7 @@ This repository provides the source for review and local compilation. It does no
 
 ## Ready-to-install release
 
-Download **ZoneFPV-0.2.0-RC3.zip** from [RC3 Releases](https://github.com/mrwinka/ZoneFPV/releases/tag/v0.2.0-rc3). RC2 remains available separately. RC3 respects the configured UE4SS game-thread method (including EngineTick) and improves console/focus handling. The user reported successful in-game testing; confirmation on the original 2.0.6 / UE4SS 527a483b reporter setup remains pending. See CHANGELOG.md and RELEASE_STATUS.md.
+Download **ZoneFPV-0.2.0-RC4.zip** from the [GitHub release list](https://github.com/mrwinka/ZoneFPV/releases). RC2 and RC3 remain available separately. RC4 adds main/alternative FPV guidance, stronger collision checks, player-state protection, loading distance through 5×, optional manual object-limit configuration and a DualShock 4 DirectInput profile. See [CHANGELOG.md](CHANGELOG.md), [RELEASE_NOTES.md](RELEASE_NOTES.md) and [OBJECT_LIMIT.md](OBJECT_LIMIT.md) for changes and known limitations.
 
 ## Build the native helper
 
@@ -43,7 +43,7 @@ PowerShell, from the repository root:
 .\Test.ps1 -LuaPath 'C:\path\to\approved\lua.exe'
 ```
 
-The second command requires an independently installed Lua 5.4 interpreter approved for your machine. Native tests and installer fixture tests passed during RC2 preparation; Lua runtime tests were not executed because the available interpreter was blocked by local application control. Static syntax checking passed for the Lua runtime/test files. New in-game modes and additional computers still require validation; see [release status](RELEASE_STATUS.md).
+Lua tests require an independently installed Lua 5.4 interpreter. The optimized MSVC build, all 19 Lua suites, 45-file Lua syntax checks, native profile/OSD/object-limit tests and installer preservation checks passed for the tested RC4 code. Run `.\Test-Native.ps1` for the native suites. The mod author reports that the RC4 test build works; physical DS4 testing and broader configurations remain unverified. See [release status](RELEASE_STATUS.md).
 
 ## Review map
 
@@ -57,3 +57,4 @@ The second command requires an independently installed Lua 5.4 interpreter appro
 ## Licenses and attribution
 
 ZoneFPV code: [MIT](LICENSE.txt). The separate, unmodified Betaflight bitmap font is distributed with its source and GPL-3.0-or-later license under `mod/fonts`. UE4SS and its game-specific compatibility patch are separate dependencies. Project code, UI text and documentation were developed with generative AI assistance; validation limits are documented above.
+

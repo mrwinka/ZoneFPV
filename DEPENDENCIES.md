@@ -1,26 +1,32 @@
 # Requirements / dependencies
 
-## 2.0.6 compatibility report and RC3 release candidate (2026-09-27)
+- Windows 10/11 x64 and the PC version of S.T.A.L.K.E.R. 2.
+- A game-version-compatible UE4SS runtime and loader installed in `Stalker2/Binaries/Win64/ue4ss`.
+- A transmitter in USB Joystick mode or gamepad exposed through DirectInput, XInput or WinMM.
 
-**Released RC2 explicitly requests ProcessEvent.** A user reported failure to activate FPV, stutters and a disappearing UE4SS console on game 2.0.6, UE4SS commit `527a483b`, with the runtime package at https://www.nexusmods.com/stalker2heartofchornobyl/mods/2810 and EngineTick configured. This configuration is not supported by RC2. Do not switch it to ProcessEvent to work around ZoneFPV: the reporter states that doing so crashes their game.
+ZoneFPV's installer copies only its own mod. UE4SS, proxy DLLs, engine signatures and compatibility patches are not bundled or replaced. The input helper is statically linked; end users do not need Visual Studio or Python.
 
-**RC3 release candidate removes the ProcessEvent override.** Camera work is posted through the one-argument `ExecuteInGameThread(callback)` API, which respects UE4SS's configured default, including EngineTick. It never probes or switches hooks on failure and never edits UE4SS settings. Keep the settings supplied for your runtime/game version (the report uses `DefaultExecuteInGameThreadMethod = EngineTick`, `HookEngineTick = 1`, `HookProcessLocalScriptFunction = 1`). Follow the runtime package's own instructions; do not combine old and new fixes blindly.
+## Game-thread compatibility
 
-The startup bootstrap no longer applies `WindowStyle Hidden` to a potentially inherited UE4SS console; only the separately launched input helper is hidden. Input remains background/nonexclusive. The native helper now restricts game hotkeys/OSD targeting to the Unreal viewport rather than every window sharing the game PID.
+RC3 and RC4 use the one-argument `ExecuteInGameThread(callback)` API and respect UE4SS's configured default, including **EngineTick**. They do not force ProcessEvent, change hooks on dispatch failure or edit UE4SS settings.
 
-These are code fixes awaiting in-game confirmation on the reported setup, not certification of patch 2.0.6 support. The console/focus cause and reported stutters have not been reproduced locally. Test console visibility, F6/F8, flight, Alt+Tab, overlays and shutdown before treating this build as validated.
+The original RC2 explicitly requested ProcessEvent. A reporter's game 2.0.6 / UE4SS `527a483b` setup with [compatibility package 2810](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2810) required EngineTick. The reporter subsequently confirmed RC3 worked without the reported freezes. Keep the settings required by the runtime for your exact game version; do not change them to ProcessEvent as a ZoneFPV workaround.
 
-Windows 10/11 x64, STALKER 2 PC, and a **game-version-compatible UE4SS runtime** installed in `Stalker2/Binaries/Win64/ue4ss` with a working loader.
+## Runtime links
 
-The installer copies ZoneFPV only. It does not replace an existing UE4SS runtime, proxy DLL, engine signatures or other mods. This avoids silently breaking an existing mod installation. No compiler, Python or Visual C++ redistributable is required for the statically linked bridge.
+- [UE4SS upstream](https://github.com/UE4SS-RE/RE-UE4SS)
+- [UE4SS releases](https://github.com/UE4SS-RE/RE-UE4SS/releases)
+- [Legacy STALKER 2 compatibility fix](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2341): use only for game versions explicitly supported on that page.
 
-- UE4SS upstream: https://github.com/UE4SS-RE/RE-UE4SS
-- Compatibility fix used on the development machine: https://www.nexusmods.com/stalker2heartofchornobyl/mods/2341
-- Follow the runtime author's instructions for your exact game update. A newer game update can require a different compatibility fix.
-- The development installation uses base **UE4SS_v3.0.1-1028-gd7e7826d.zip**, with the game-specific compatibility fix. The base release is available through the upstream releases page: https://github.com/UE4SS-RE/RE-UE4SS/releases . Do not substitute an arbitrary stable UE4SS 3.0.1 ZIP.
-- As checked on 2026-09-21, the compatibility page offers v1.2 for game patch 2.0.5. Its settings/signatures differ from the v1.1 installation used locally (including the FNameToString method). Follow that page for your version; do not reuse old INI settings blindly. ZoneFPV has not been retested against every compatibility patch.
-- Third-party runtime/patch files are **not bundled**; this package does not assume permission to redistribute them.
+Different game updates can need different runtime builds, settings or signatures. These links are not instructions to combine all compatibility fixes. Existing working installations do not need their runtime replaced just to update ZoneFPV.
 
-If Windows App Control rejects the unsigned bridge, this package is not runnable under that policy until it is accepted through the computer's legitimate software approval process. The installer never disables security, adds exclusions, or modifies App Control. Code signing is not provided; testing on a clean machine remains outstanding.
+## Controllers and display
 
-Controllers: USB Joystick/HID via DirectInput; Xbox-compatible XInput; legacy WinMM. Sony USB HID devices are identified by Sony vendor ID. Bluetooth, adapters, Steam Input and custom transmitter models can expose different axes or virtual devices: select the actual interface in the Controller tab, then verify directions. Factory profiles are starting mappings, not measured calibration. Unknown devices can be calibrated manually using any four of the eight exposed axes.
+Eight DirectInput axes (including sliders) are supported. Initial profiles include Xbox, DualSense, DualShock 4 and several radio layouts. USB/Bluetooth, adapters, Steam Input and custom radio channel mappings can expose different devices/axes; select one interface and verify directions. Physical DualShock 4 testing is pending.
+
+Borderless/windowed play is recommended for the native OSD. The bridge uses background/nonexclusive input. Game focus changes pause FPV controls/audio without ending the session; stale or disconnected input still ends FPV.
+
+## Ограничения совместимости
+
+Нужен UE4SS именно для вашей версии игры. RC3/RC4 соблюдают выбранный в нём метод игрового потока, включая EngineTick; настройки UE4SS не меняются. Старый патч 2341 подходит только для версий игры, перечисленных на его странице. Готовые профили контроллеров требуют проверки направлений; настоящий DS4 ещё не проверен.
+

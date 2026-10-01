@@ -3,13 +3,22 @@ assert(here,'ZoneFPV requires an on-disk script path')
 local root=here..'../'
 local flight=dofile(here..'flight.lua')
 local input=dofile(here..'input.lua')
+local focusGuard=dofile(here..'focus_guard.lua')
+local focusState={}
 local publishAudio=dofile(here..'audio.lua').new(root)
 local cfg=dofile(here..'config.lua')
 local publishTelemetry=dofile(here..'telemetry.lua').new(root,flight,cfg)
 local visualGuard=dofile(here..'visual_guard.lua')
+local environmentGuard=dofile(here..'environment_guard.lua')
 local playerVisibility=dofile(here..'player_visibility.lua')
+local playerGuard=dofile(here..'player_guard.lua')
+local aiGuard=dofile(here..'ai_guard.lua')
+local playerUI=dofile(here..'player_ui.lua')
+local regionalFog=dofile(here..'regional_fog.lua')
 local worldOptions=dofile(here..'world_options.lua')
 local options=worldOptions.load(root)
+local worldDistance=dofile(here..'world_distance.lua')
+local distanceSelection=worldDistance.load(root)
 local worldFreeze=dofile(here..'world_freeze.lua')
 local droneCollision=dofile(here..'drone_collision.lua')
 local npcAnchor=dofile(here..'npc_anchor.lua')
@@ -63,7 +72,15 @@ do
     local ok,detail=dofile(here..'bridge.lua').start(root)
     log(ok and 'Input bridge ready (automatic start).' or ('Input bridge auto-start failed: '..tostring(detail)))
 end
+local session,pc,gameplay,system,cameraClass
+local selectedWeather
 local environment=dofile(here..'environment.lua').new(root,function(command)
+    local distance=command:match('^FPVDistance ([0-6])$')
+    if distance then
+        distance=tonumber(distance)
+        if not worldDistance.save(root,distance) then return false end
+        distanceSelection=distance;return true
+    end
     local mode=command:match('^FPVMode (%w+)$')
     if mode then
         if not pilotSettings.save(root,'pilot-mode',mode) then return false end
@@ -98,22 +115,29 @@ local environment=dofile(here..'environment.lua').new(root,function(command)
     local library=helpers.GetKismetSystemLibrary()
     if not valid(library) then return false end
     library:ExecuteConsoleCommand(controller,command,controller)
+    local weather=command:match('^XForceWeather (%w+)$')
+    if weather then selectedWeather=weather end
+    if weather or command:match('^XSetWeatherTime ') then environmentGuard.changed(session,os.clock()) end
     return true
 end,log)
 local function vec(v) return {X=v.x*100,Y=v.y*100,Z=v.z*100} end
 local function meters(v) return {x=v.X/100,y=v.Y/100,z=v.Z/100} end
-local session,pc,gameplay,system,cameraClass
 local pending=false
 local pendingSince,watchdogReported,stage=0,false,'idle'
 local cameraUpdates,cameraTime,cameraGap=0,0,0
 local request,resetRequested=false,false
 local lastPacket,lastChange,lastButton,lastToggle=nil,0,false,-10
+local lastPacketLine,lastParsedPacket
 local nextGodUpdate
 local clock=os.clock
 local function packet()
     local file=io.open(root..'input.txt','r')
     local p
-    if file then p=input.parse(file:read(512));file:close() end
+    if file then
+        local line=file:read(512);file:close()
+        if line~=lastPacketLine then lastPacketLine=line;lastParsedPacket=input.parse(line) end
+        p=lastParsedPacket
+    end
     -- Atomic replacement can briefly deny opening the file on Windows.
     -- Keep the previous sample only within the existing 250 ms freshness limit.
     p=p or lastPacket
@@ -128,8 +152,7 @@ local function packet()
     lastPacket=p
     -- Epoch guard rejects an old file on initial launch; sequence guard is sub-second.
     if math.abs(os.time()-p.time/1000)>2 or clock()-lastChange>0.25 then return nil end
-    if not p.connected or not p.focused then return nil end
-    return p
+    return focusGuard.accept(focusState,p,clock())
 end
 local function exit(reason)
     local s=session
@@ -147,8 +170,13 @@ local function exit(reason)
     if s.npcAnchor and valid(s.pawn) then
         restore('NPC anchor',function() npcAnchor.restore(s) end)
     end
+    restore('player exposure and audio',function() playerGuard.restore(s) end)
+    restore('world distance',function() worldDistance.restore(s,log) end)
     restore('camera effects',function() visualGuard.restore(s) end)
+    restore('regional fog',function() regionalFog.restore(s) end)
+    restore('player UI',function() playerUI.restore(s,gameplay) end)
     restore('player equipment',function() playerVisibility.restore(s) end)
+    restore('player AI detection',function() aiGuard.restore(s,log) end)
     if s.movementFrozen and valid(s.movement) then
         restore('movement mode',function()
             s.movement:StopMovementImmediately()
@@ -194,6 +222,9 @@ local function enter(p)
     local s={mode=cfg.flight_mode,pc=pc,pawn=pc.Pawn,previousView=pc:GetViewTarget(),origin=position,
         world=pc:GetWorld(),lastWorldTime=gameplay:GetTimeSeconds(pc),lastRealTime=clock()}
     session=s -- enables rollback if any subsequent call fails
+    aiGuard.start(s,system,log)
+    playerGuard.update(s)
+    playerUI.update(s,clock(),gameplay,p.menu)
     local halfYaw=math.rad(rotation.Yaw)*0.5
     local transform={Translation=vec(position),Rotation={X=0,Y=0,Z=math.sin(halfYaw),W=math.cos(halfYaw)},Scale3D={X=1,Y=1,Z=1}}
     s.camera=gameplay:BeginDeferredActorSpawnFromClass(s.pawn,cameraClass,transform,1,s.pawn,0)
@@ -203,12 +234,13 @@ local function enter(p)
     s.camera.CameraComponent.bConstrainAspectRatio=false
     s.camera:SetActorEnableCollision(false)
     s.flight=flight.new(position,rotation.Yaw)
+    playerVisibility.update(s,clock())
     s.startYaw=rotation.Yaw
     s.hud=pc:GetHUD()
     if valid(s.hud) then s.hudVisible=s.hud.bShowHUD;s.hud.bShowHUD=false end
     s.widgetsHidden=true
     system:ExecuteConsoleCommand(pc,'XHideAllWidget',pc)
-    s.nextHudHide=clock()+0.1
+    s.nextHudHide=clock()+0.5
     pc:SetIgnoreMoveInput(true);s.moveLocked=true
     pc:SetIgnoreLookInput(true);s.lookLocked=true
     s.pawn:DisableInput(pc);s.pawnDisabled=true
@@ -224,10 +256,11 @@ local function enter(p)
     pc:SetViewTargetWithBlend(s.camera,0,0,0,false)
     lastToggle=clock()
     log('FPV active. F8 return; F9 reset. Controller calibration '..(calibration and 'loaded' or 'DEFAULT AETR'))
+    log('ZoneFPV 0.2.0 RC4. Collision: simple + complex sphere sweeps, trace channel + player profile.')
 end
 local function collide(s,old)
     if not cfg.collision then return end
-    local yes,hit=droneCollision.trace(system,session,vec(old),vec(s.p),cfg.radius*100,false)
+    local yes,hit=droneCollision.trace(system,session,vec(old),vec(s.p),cfg.radius*100)
     if yes then
         local n={x=hit.Normal.X,y=hit.Normal.Y,z=hit.Normal.Z}
         local p=meters(hit.Location)
@@ -251,31 +284,36 @@ local function update()
         nextGodUpdate=tickNow+0.25
     end
     local p=packet()
-    if p and cfg.toggle_button>0 then
+    if p and p.focused and cfg.toggle_button>0 then
         local down=(p.buttons & (1 << (cfg.toggle_button-1)))~=0
         if down and not lastButton then request=true end
         lastButton=down
-    elseif not p then lastButton=false end
+    elseif not p or not p.focused then
+        -- Latch held buttons while away so returning focus cannot toggle FPV.
+        lastButton=p and cfg.toggle_button>0 and (p.buttons & (1 << (cfg.toggle_button-1)))~=0 or false
+    end
     if request then
         request=false
-        if session then exit('toggle') elseif p then enter(p) else log('Start input bridge / focus game / check USB.') end
+        if p and p.focused then
+            if session then exit('toggle') else enter(p) end
+        else log('Start input bridge / focus game / check USB.') end
     end
     if not session then return end
     local s=session
     if s.mode~=cfg.flight_mode then exit('flight mode changed; re-enter FPV');return end
-    if not p then exit('controller disconnected, stale input or focus lost');return end
+    if not p then exit('controller disconnected or stale input');return end
     if not valid(s.pc) or not valid(s.pawn) or not valid(s.camera) or not valid(s.world) then
         exit('world changed');return
     end
     if not same(s.pc.Pawn,s.pawn) or not same(s.pc:GetWorld(),s.world) then exit('pawn/world changed');return end
-    if gameplay:IsGamePaused(s.pc) and not s.freezeOwned and not p.menu then exit('pause/menu');return end
+    if gameplay:IsGamePaused(s.pc) and not p.menu and not p.paused then exit('pause/menu');return end
     local wasFrozen=s.freezeOwned
     worldFreeze.set(s,options.freeze,gameplay)
-    if valid(s.hud) then s.hud.bShowHUD=false end
+    if valid(s.hud) and s.hud.bShowHUD then s.hud.bShowHUD=false end
     if clock()>=s.nextHudHide then
         stage='hide HUD'
         system:ExecuteConsoleCommand(s.pc,'XHideAllWidget',s.pc)
-        s.nextHudHide=clock()+0.1
+        s.nextHudHide=clock()+0.5
     end
     if not valid(s.movement) then exit('character movement unavailable');return end
     -- Game scripts may request falling even though player input is disabled.
@@ -292,24 +330,27 @@ local function update()
     local realNow=clock()
     local dt=(s.freezeOwned or wasFrozen) and (realNow-s.lastRealTime) or (now-s.lastWorldTime)
     s.lastWorldTime=now;s.lastRealTime=realNow
-    if dt==0 and not p.menu then return end
+    dt=environmentGuard.delta(s,dt,realNow)
+    local inputPaused
+    dt,inputPaused=focusGuard.delta(s,p,dt)
+    s.inputPaused=inputPaused
     if dt<0 then exit('world time reset');return end
-    if dt>1 and not p.menu then exit('frame stall over one second');return end
-    if dt>0 and not p.menu then cameraUpdates=cameraUpdates+1;cameraTime=cameraTime+dt;cameraGap=math.max(cameraGap,dt) end
-    if dt>0.1 and not p.menu and (not s.nextStallLog or clock()>=s.nextStallLog) then
+    if dt>1 and not inputPaused then exit('frame stall over one second');return end
+    if dt>0 and not inputPaused then cameraUpdates=cameraUpdates+1;cameraTime=cameraTime+dt;cameraGap=math.max(cameraGap,dt) end
+    if dt>0.1 and not inputPaused and (not s.nextStallLog or clock()>=s.nextStallLog) then
         log(string.format('Long frame %.3fs; speed=%gx; Acro rotation catches up',dt,cfg.speed_preset))
         s.nextStallLog=clock()+10
     end
     if resetRequested then
         resetRequested=false
-        s.flight=flight.new(s.origin,s.startYaw)
+        if not inputPaused then s.flight=flight.new(s.origin,s.startYaw);s.cameraDirty=true end
     end
     local u=input.controls(p,cfg,calibration)
-    s.throttle=cfg.flight_mode=='3d' and (u.throttle*2-1) or u.throttle
-    if dt>0 and not p.menu then s.flightSeconds=(s.flightSeconds or 0)+math.min(dt,1) end
+    if not inputPaused then s.throttle=cfg.flight_mode=='3d' and (u.throttle*2-1) or u.throttle end
+    if dt>0 and not inputPaused then s.flightSeconds=(s.flightSeconds or 0)+math.min(dt,1) end
     stage='physics and collision traces'
-    if dt>0 and not p.menu then flight.advance(s.flight,u,cfg,dt,collide) end
-    if not p.menu and (not s.nextFlightLog or clock()>=s.nextFlightLog) then
+    if dt>0 and not inputPaused then flight.advance(s.flight,u,cfg,dt,collide) end
+    if not inputPaused and (not s.nextFlightLog or clock()>=s.nextFlightLog) then
         log(string.format('Flight speed=%gx yaw_input=%.3f yaw_rate=%.1fdeg/s dt=%.3fs',
             cfg.speed_preset,u.yaw,math.deg(s.flight.omega.z),dt))
         s.nextFlightLog=clock()+5
@@ -318,16 +359,30 @@ local function update()
     if cfg.max_distance>0 and (pos.x-s.origin.x)^2+(pos.y-s.origin.y)^2+(pos.z-s.origin.z)^2>cfg.max_distance^2 then
         exit('configured distance limit reached');return
     end
-    local hit={}
     if s.analogApplied~=cfg.analog_enabled or s.analogStyleApplied~=cfg.analog_style then
         local ok,err=pcall(analog.apply,s.camera.CameraComponent,cfg.analog_enabled,cfg.analog_style)
         s.analogApplied=cfg.analog_enabled;s.analogStyleApplied=cfg.analog_style
         log(ok and ('Analog camera: '..(cfg.analog_enabled and 'on' or 'off')) or ('Analog effect unavailable: '..tostring(err)))
     end
     stage='camera transform'
-    s.camera:K2_SetActorLocationAndRotation(vec(pos),flight.camera_rotation(s.flight,cfg.camera_tilt),false,hit,true)
+    -- Callbacks can share a world-time sample, and menus/focus hold physics.
+    -- Do not dirty the camera's scene transform when no flight/tilt change occurred.
+    if (dt>0 and not inputPaused) or s.cameraDirty or s.appliedCameraTilt~=cfg.camera_tilt then
+        s.camera:K2_SetActorLocationAndRotation(vec(pos),flight.camera_rotation(s.flight,cfg.camera_tilt),false,{},true)
+        s.cameraDirty=false;s.appliedCameraTilt=cfg.camera_tilt
+    end
+    -- Weather/region scripts can replace the view target without ending FPV.
+    if not same(s.pc:GetViewTarget(),s.camera) then s.pc:SetViewTargetWithBlend(s.camera,0,0,0,false) end
+    stage='player exposure and audio'
+    if not s.nextPlayerGuard or realNow>=s.nextPlayerGuard then
+        playerGuard.update(s)
+        playerUI.update(s,realNow,gameplay,p.menu)
+        regionalFog.update(s,realNow,selectedWeather=='Clearly')
+        s.nextPlayerGuard=realNow+0.1
+    end
+    worldDistance.update(s,system,distanceSelection,log)
     stage='camera effects'
-    visualGuard.update(s,realNow,system)
+    visualGuard.update(s,realNow,system,options.npcs,selectedWeather=='Clearly')
     publishTelemetry(realNow,s)
     if not s.nextVisibilityUpdate or realNow>=s.nextVisibilityUpdate then
         stage='equipment visibility'
@@ -337,7 +392,7 @@ local function update()
     if (s.npcAnchor~=nil)~=options.npcs or not s.nextAnchorUpdate or clock()>=s.nextAnchorUpdate then
         stage='player streaming anchor'
         npcAnchor.update(s,options.npcs,vec(pos))
-        s.nextAnchorUpdate=clock()+0.25
+        s.nextAnchorUpdate=clock()+0.05
     end
 end
 for _,vk in ipairs(pilotSettings.keys) do
@@ -374,7 +429,7 @@ local function pump()
         local ok,err=xpcall(function()
             update()
             stage='audio publication'
-            publishAudio(clock(),session~=nil,session and session.flight and session.flight.thrust or 0,cfg.gravity*cfg.thrust_to_weight)
+            publishAudio(clock(),session~=nil and not session.inputPaused,session and session.flight and session.flight.thrust or 0,cfg.gravity*cfg.thrust_to_weight)
         end,debug.traceback)
         if not ok then
             log(tostring(err))

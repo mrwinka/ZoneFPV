@@ -17,15 +17,21 @@ inline void run(const fs::path& root,const std::atomic<bool>& stop){
     for(int b=0;b<count;++b){buffers[b].lpData=reinterpret_cast<LPSTR>(samples[b].data());buffers[b].dwBufferLength=frames*4;
         waveOutPrepareHeader(device,&buffers[b],sizeof(WAVEHDR));}
     double phase[4]={0,0.17,0.43,0.79},rpm=0,envelope=0,filteredNoise=0;
-    unsigned noise=0x51f0ac31;ULONGLONG lastChange=0;std::string lastSeq;
+    unsigned noise=0x51f0ac31;ULONGLONG lastChange=0,nextStateRead=0;std::string lastSeq;
     {std::ifstream previous(root/L"audio.txt");int version=0;previous>>version>>lastSeq;}
     double target=0;bool enabled=false;
     while(!stop){
-        int version=0,active=0;std::string seq;double thrust=0;
-        std::ifstream state(root/L"audio.txt");
-        if(state>>version>>seq>>active>>thrust && version==1 && std::isfinite(thrust) && thrust>=0 && thrust<=1){
-            if(seq!=lastSeq){lastSeq=seq;lastChange=GetTickCount64();}
-            target=thrust;enabled=active==1;
+        const auto now=GetTickCount64();
+        // Lua publishes active audio at 25 Hz; state polling is independent of
+        // the 4 ms buffer-service loop so queued audio still fills on time.
+        if(now>=nextStateRead){
+            nextStateRead=now+20;
+            int version=0,active=0;std::string seq;double thrust=0;
+            std::ifstream state(root/L"audio.txt");
+            if(state>>version>>seq>>active>>thrust && version==1 && std::isfinite(thrust) && thrust>=0 && thrust<=1){
+                if(seq!=lastSeq){lastSeq=seq;lastChange=GetTickCount64();}
+                target=thrust;enabled=active==1;
+            }
         }
         if(GetTickCount64()-lastChange>350)enabled=false;
         const bool audible=enabled&&volume.load()>0;

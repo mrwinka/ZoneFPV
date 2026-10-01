@@ -27,8 +27,12 @@ function M.mul(a,b)
       z=a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w}
 end
 function M.rotate(q,v)
-    local t=M.mul(M.mul(q,{w=0,x=v.x,y=v.y,z=v.z}),{w=q.w,x=-q.x,y=-q.y,z=-q.z})
-    return {x=t.x,y=t.y,z=t.z}
+    -- Expanded q * v * conjugate(q), including non-unit quaternions. Avoid
+    -- four temporary quaternion tables for a vector rotation.
+    local w,x,y,z=q.w,q.x,q.y,q.z
+    return {x=(w*w+x*x-y*y-z*z)*v.x+2*(x*y-w*z)*v.y+2*(x*z+w*y)*v.z,
+        y=2*(x*y+w*z)*v.x+(w*w-x*x+y*y-z*z)*v.y+2*(y*z-w*x)*v.z,
+        z=2*(x*z-w*y)*v.x+2*(y*z+w*x)*v.y+(w*w-x*x-y*y+z*z)*v.z}
 end
 function M.axis(x,y,z,angle)
     local s=math.sin(angle/2)
@@ -47,9 +51,9 @@ end
 local function attitude(s,u,c,dt)
     -- Acro sticks command body angular velocity. A finite motor response models
     -- the closed-loop rate controller; there is deliberately no angle levelling.
-    local target={x=-M.rate(u.roll,c.roll_rate,c.expo,c.deadband),
-        y=M.rate(u.pitch,c.pitch_rate,c.expo,c.deadband),
-        z=M.rate(u.yaw,c.yaw_rate,c.expo,c.deadband)}
+    local targetX=-M.rate(u.roll,c.roll_rate,c.expo,c.deadband)
+    local targetY=M.rate(u.pitch,c.pitch_rate,c.expo,c.deadband)
+    local targetZ=M.rate(u.yaw,c.yaw_rate,c.expo,c.deadband)
     if c.flight_mode=='angle' then
         -- Desired bank/pitch are angles, yaw remains an Acro rate.
         local q=s.q
@@ -58,12 +62,14 @@ local function attitude(s,u,c,dt)
         local limit=math.rad(50)
         local rx=clamp(u.roll,-1,1);local py=clamp(u.pitch,-1,1)
         if math.abs(rx)<c.deadband then rx=0 end;if math.abs(py)<c.deadband then py=0 end
-        target.x=clamp((-rx*limit-roll)*6,-math.rad(c.roll_rate),math.rad(c.roll_rate))
-        target.y=clamp((py*limit-pitch)*6,-math.rad(c.pitch_rate),math.rad(c.pitch_rate))
+        targetX=clamp((-rx*limit-roll)*6,-math.rad(c.roll_rate),math.rad(c.roll_rate))
+        targetY=clamp((py*limit-pitch)*6,-math.rad(c.pitch_rate),math.rad(c.pitch_rate))
     end
     local a=1-math.exp(-dt/c.rate_response)
-    for _,k in ipairs({'x','y','z'}) do s.omega[k]=s.omega[k]+(target[k]-s.omega[k])*a end
     local o=s.omega
+    o.x=o.x+(targetX-o.x)*a
+    o.y=o.y+(targetY-o.y)*a
+    o.z=o.z+(targetZ-o.z)*a
     local speed=math.sqrt(o.x*o.x+o.y*o.y+o.z*o.z)
     if speed>1e-9 then s.q=M.mul(s.q,M.axis(o.x/speed,o.y/speed,o.z/speed,speed*dt)) end
     local q=s.q
@@ -87,22 +93,27 @@ function M.step(s,u,c,dt)
     end
     local thrust=c.gravity*c.thrust_to_weight*((1-c.throttle_curve)*t+c.throttle_curve*t*math.abs(t))
     s.thrust=s.thrust+(thrust-s.thrust)*(1-math.exp(-dt/c.motor_response))
-    local up=M.rotate(s.q,{x=0,y=0,z=1})
-    local velocity=math.sqrt(s.v.x^2+s.v.y^2+s.v.z^2)
-    for _,k in ipairs({'x','y','z'}) do
-        local acc=up[k]*s.thrust-(c.linear_drag+c.quadratic_drag*velocity)*s.v[k]
-        if k=='z' then acc=acc-c.gravity end
-        s.v[k]=s.v[k]+acc*dt
-        -- Keep the accepted gravity calibration. Low power affects the full
-        -- body thrust vector, not gravity, time, angular rates or displacement.
-        s.p[k]=s.p[k]+s.v[k]*dt*(k=='z' and 1.5 or scale)
-    end
+    local q,v,p=s.q,s.v,s.p
+    -- Rotate only the body up axis; no vector or quaternion scratch tables.
+    local upX=2*(q.x*q.z+q.w*q.y)
+    local upY=2*(q.y*q.z-q.w*q.x)
+    local upZ=q.w*q.w-q.x*q.x-q.y*q.y+q.z*q.z
+    local velocity=math.sqrt(v.x^2+v.y^2+v.z^2)
+    local drag=c.linear_drag+c.quadratic_drag*velocity
+    v.x=v.x+(upX*s.thrust-drag*v.x)*dt
+    v.y=v.y+(upY*s.thrust-drag*v.y)*dt
+    v.z=v.z+(upZ*s.thrust-drag*v.z-c.gravity)*dt
+    -- Keep the accepted gravity calibration. Low power affects the full
+    -- body thrust vector, not gravity, time, angular rates or displacement.
+    p.x=p.x+v.x*dt*scale
+    p.y=p.y+v.y*dt*scale
+    p.z=p.z+v.z*dt*1.5
 end
 function M.advance(s,u,c,dt,collision)
     -- Bounded fixed steps: stalls do not produce a huge jump or a catch-up spiral.
     s.accumulator=s.accumulator+clamp(dt,0,0.1)
     while s.accumulator+1e-12>=c.step do
-        local old={x=s.p.x,y=s.p.y,z=s.p.z}
+        local old=collision and {x=s.p.x,y=s.p.y,z=s.p.z}
         M.step(s,u,c,c.step)
         if collision then collision(s,old) end
         s.accumulator=s.accumulator-c.step
@@ -120,25 +131,21 @@ function M.collide(s,position,normal,restitution,friction,speedPreset)
     s.p={x=position.x,y=position.y,z=position.z}
     -- Resolve impulses using actual world velocity after axis scaling.
     local scale=M.horizontal_scale(speedPreset or 2)
-    local scales={x=scale,y=scale,z=1.5}
-    for _,k in ipairs({'x','y','z'}) do s.v[k]=s.v[k]*scales[k] end
-    local dot=s.v.x*normal.x+s.v.y*normal.y+s.v.z*normal.z
+    local vx,vy,vz=s.v.x*scale,s.v.y*scale,s.v.z*1.5
+    local dot=vx*normal.x+vy*normal.y+vz*normal.z
     if dot<0 then
         -- Suppress tiny resting bounces. Coulomb friction consumes tangential
         -- momentum in proportion to the normal impulse, independent of FPS.
         local bounce=dot < -0.5 and restitution or 0
         local impulse=-(1+bounce)*dot
-        local tangent={}
-        local speed2=0
-        for _,k in ipairs({'x','y','z'}) do
-            tangent[k]=s.v[k]-dot*normal[k]
-            speed2=speed2+tangent[k]^2
-        end
-        local speed=math.sqrt(speed2)
-        local scale=speed>0 and math.max(0,1-(friction or 0)*impulse/speed) or 0
-        for _,k in ipairs({'x','y','z'}) do s.v[k]=tangent[k]*scale-bounce*dot*normal[k] end
+        local tx,ty,tz=vx-dot*normal.x,vy-dot*normal.y,vz-dot*normal.z
+        local speed=math.sqrt(tx^2+ty^2+tz^2)
+        local tangentScale=speed>0 and math.max(0,1-(friction or 0)*impulse/speed) or 0
+        vx=tx*tangentScale-bounce*dot*normal.x
+        vy=ty*tangentScale-bounce*dot*normal.y
+        vz=tz*tangentScale-bounce*dot*normal.z
     end
-    for _,k in ipairs({'x','y','z'}) do s.v[k]=s.v[k]/scales[k] end
+    s.v.x,s.v.y,s.v.z=vx/scale,vy/scale,vz/1.5
 end
 function M.camera_rotation(s,tilt)
     local q=M.mul(s.q,M.axis(0,1,0,-math.rad(tilt)))

@@ -29,3 +29,24 @@ foreach($file in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'mod') -Fil
     if($relative -eq 'calibration.lua'){continue}
     if((Get-FileHash -LiteralPath $file.FullName).Hash -ne (Get-FileHash -LiteralPath (Join-Path $target $relative)).Hash){throw "Installed file mismatch: $relative"}
 }
+
+# Retire the failed scent experiment without touching other mods/base archives.
+$packageDirectory=[IO.Path]::GetFullPath((Join-Path $GameRoot 'Stalker2\Content\Paks\~mods'))
+$packageTarget=[IO.Path]::GetFullPath((Join-Path $packageDirectory 'ZoneFPV_PlayerScent_P.pak'))
+if([IO.Path]::GetDirectoryName($packageTarget) -ne $packageDirectory){throw 'Unexpected package path.'}
+if(Test-Path -LiteralPath $packageTarget){
+    $retiredDirectory=Join-Path $PSScriptRoot 'backups'
+    New-Item -ItemType Directory -Path $retiredDirectory -Force | Out-Null
+    $retiredPackage=Join-Path $retiredDirectory ('retired-player-scent-'+[guid]::NewGuid().ToString('N')+'.pak')
+    Move-Item -LiteralPath $packageTarget -Destination $retiredPackage
+    Write-Output 'Removed experimental scent PAK from game; retained backup.'
+}
+
+foreach($retiredName in @('camera_streaming.lua','draw_distance.lua','streaming.lua','player_scent.lua','region_lighting.lua','region_diagnostic.lua','outdoor_weather.lua','cnpp_probe.lua','effect_diagnostic.lua','mutant_diagnostic.lua','terrain_guard.lua')){
+    $retiredFile=Join-Path $target ('Scripts\'+$retiredName)
+    if(Test-Path -LiteralPath $retiredFile){Remove-Item -LiteralPath $retiredFile}
+}
+
+# Retire the CNPP probe switch; preserve existing captured reports/settings.
+$probeMarker=Join-Path $target 'cnpp-probe.enabled'
+if(Test-Path -LiteralPath $probeMarker){Remove-Item -LiteralPath $probeMarker}

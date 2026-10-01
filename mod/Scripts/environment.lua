@@ -5,6 +5,7 @@ function M.parse(line)
     local id,kind,args=line:match('^(%d+) (%a+) ([%w%. ]+)%s*$')
     if not id then return end
     args=args:match('^(.-)%s*$')
+    if kind=='distance' and args:match('^[0-6]$') then return id,'FPVDistance '..args end
     if kind=='mode' and (args=='acro' or args=='angle' or args=='3d') then return id,'FPVMode '..args end
     if kind=='style' and args:match('^[0-4]$') then return id,'FPVStyle '..args end
     if kind=='bindings' and args:match('^%d+ %d+ %d+$') then return id,'FPVBindings '..args end
@@ -13,7 +14,7 @@ function M.parse(line)
     if kind=='calibration' and args=='1' then return id,'FPVCalibrationReload' end
     if kind=='option' then
         local name,value=args:match('^(%a+) ([01])$')
-        if name=='freeze' or name=='npcs' or name=='god' or name=='hotstart' then return id,'FPVOption '..name..' '..value end
+        if name=='freeze' or name=='alternate' or name=='god' or name=='hotstart' then return id,'FPVOption '..name..' '..value end
     end
     if kind=='flight' then
         local speed,tilt=args:match('^([%d%.]+) (%d+)$');speed,tilt=tonumber(speed),tonumber(tilt)

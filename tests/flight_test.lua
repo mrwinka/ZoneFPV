@@ -46,6 +46,31 @@ test('camera tilt and yaw use Unreal conventions',function()
     local s=f.new({x=0,y=0,z=0},90);local r=f.camera_rotation(s,25)
     near(r.Pitch,25);near(r.Yaw,90);near(r.Roll,0)
 end)
+test('vector rotation matches Hamilton products for arbitrary and non-unit quaternions',function()
+    local quaternions={f.axis(1,0,0,0.7),f.mul(f.axis(0,0,1,1.2),f.axis(0,1,0,-0.3)),
+        {w=2,x=-3,y=0.5,z=4},{w=0,x=0,y=0,z=0}}
+    for _,q in ipairs(quaternions) do
+        for _,v in ipairs({{x=0,y=0,z=1},{x=-3,y=2,z=0.25},{x=1.5,y=-0.2,z=-7}}) do
+            local expected=f.mul(f.mul(q,{w=0,x=v.x,y=v.y,z=v.z}),{w=q.w,x=-q.x,y=-q.y,z=-q.z})
+            local actual=f.rotate(q,v)
+            near(actual.x,expected.x);near(actual.y,expected.y);near(actual.z,expected.z)
+        end
+    end
+end)
+test('fixed steps retain independent pre-movement snapshots and bounded collision work',function()
+    local s=f.new({x=0,y=0,z=100},0)
+    local snapshots,positions={},{}
+    f.advance(s,zero,c,0.3,function(state,old)
+        snapshots[#snapshots+1]=old
+        positions[#positions+1]=state.p.z
+    end)
+    assert(#snapshots==24,'long frames must keep the 100 ms collision bound')
+    for i,old in ipairs(snapshots) do
+        near(old.z,i==1 and 100 or positions[i-1])
+        assert(positions[i]<old.z,'every translation step must still move')
+        if i>1 then assert(old~=snapshots[i-1]) end
+    end
+end)
 test('collision removes inward velocity and respects bounce',function()
     local s=f.new({x=0,y=0,z=0},0);s.v={x=2,y=0,z=-10}
     f.collide(s,{x=0,y=0,z=1},{x=0,y=0,z=1},0.1)

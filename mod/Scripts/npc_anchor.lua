@@ -4,9 +4,8 @@ local M={}
 local function copy(v) return {X=v.X,Y=v.Y,Z=v.Z} end
 local function valid(o) return o and (not o.IsValid or o:IsValid()) end
 local function invoke(o,name,...)
-    local fn=o and o[name]
-    if type(fn)~='function' then return false end
-    return pcall(fn,o,...)
+    local args={...}
+    return pcall(function() return o[name](o,table.unpack(args)) end)
 end
 function M.update(s,enabled,position)
     if not enabled then return M.restore(s) end
@@ -15,15 +14,7 @@ function M.update(s,enabled,position)
         local a={position=copy(pawn:K2_GetActorLocation()),
             hidden=pawn.bHidden,collision=pawn:GetActorEnableCollision(),damage=pawn.bCanBeDamaged}
         s.npcAnchor=a
-        local mesh=pawn.Mesh
-        if valid(mesh) then
-            a.mesh=mesh;a.meshVisible=mesh.bVisible;a.meshCastShadow=mesh.CastShadow
-            a.meshCastHiddenShadow=mesh.bCastHiddenShadow
-            invoke(mesh,'SetVisibility',false,true)
-            invoke(mesh,'SetCastShadow',false)
-            if mesh.bCastHiddenShadow~=nil then mesh.bCastHiddenShadow=false end
-        end
-        if type(StaticFindObject)=='function' and type(pawn.GetComponentByClass)=='function' then
+        if type(StaticFindObject)=='function' then
             local ok,class=pcall(StaticFindObject,'/Script/AIModule.AIPerceptionStimuliSourceComponent')
             if ok and valid(class) then
                 local got,component=pcall(pawn.GetComponentByClass,pawn,class)
@@ -37,15 +28,12 @@ function M.update(s,enabled,position)
         pawn:SetActorEnableCollision(false)
     end
     -- Reassert these because game scripts can restore character presentation/state.
-    pawn.bCanBeDamaged=false
-    if s.npcAnchor.mesh then
-        invoke(s.npcAnchor.mesh,'SetVisibility',false,true)
-        invoke(s.npcAnchor.mesh,'SetCastShadow',false)
-        if s.npcAnchor.mesh.bCastHiddenShadow~=nil then s.npcAnchor.mesh.bCastHiddenShadow=false end
-    end
-    -- Keep the horizontal A-Life/streaming anchor at the drone, but place the
-    -- actual pawn below its starting point. This removes its shadow and keeps
-    -- automatic pawn sight registration out of NPC line of sight.
+    if pawn.bCanBeDamaged then pawn.bCanBeDamaged=false end
+    if not pawn.bHidden then pawn:SetActorHiddenInGame(true) end
+    if pawn:GetActorEnableCollision() then pawn:SetActorEnableCollision(false) end
+    -- Restore RC2/RC3 placement: follow camera XY, keep the real pawn 50 m
+    -- below its ENTRY height. Never put the detectable pawn at the camera.
+    -- Camera movement/collision and current presentation guards stay separate.
     local anchorPosition={X=position.X,Y=position.Y,Z=s.npcAnchor.position.Z-5000}
     local previous=s.npcAnchor.lastPosition
     -- Avoid repeated scene/streaming updates while hovering or using the menu.
@@ -65,11 +53,6 @@ function M.restore(s)
     restore(function() pawn:K2_SetActorLocation(a.position,false,{},true) end)
     restore(function() pawn.bCanBeDamaged=a.damage end)
     if a.perception then restore(function() invoke(a.perception,'RegisterWithPerceptionSystem') end) end
-    if a.mesh then
-        restore(function() invoke(a.mesh,'SetVisibility',a.meshVisible~=false,true) end)
-        restore(function() invoke(a.mesh,'SetCastShadow',a.meshCastShadow~=false) end)
-        restore(function() if a.meshCastHiddenShadow~=nil then a.mesh.bCastHiddenShadow=a.meshCastHiddenShadow end end)
-    end
     restore(function() pawn:SetActorHiddenInGame(a.hidden) end)
     restore(function() pawn:SetActorEnableCollision(a.collision) end)
     s.npcAnchor=nil

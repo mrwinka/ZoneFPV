@@ -1,4 +1,5 @@
 local M={}
+local controls={'roll','pitch','yaw','throttle'}
 function M.parse(line)
     if not line or #line>512 then return nil end
     local n={}
@@ -23,7 +24,7 @@ function M.parse(line)
 end
 function M.controls(packet,c,calibration)
     local u={}
-    for _,name in ipairs({'roll','pitch','yaw','throttle'}) do
+    for _,name in ipairs(controls) do
         local a=calibration and calibration[name]
         local axis=a and a.axis or c[name..'_axis']
         local lo=a and a.min or 0

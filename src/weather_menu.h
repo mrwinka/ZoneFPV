@@ -7,7 +7,7 @@
 namespace weatherMenu {
 inline std::atomic<HWND> window{nullptr};
 inline HWND hours=nullptr,minutes=nullptr,weather=nullptr,status=nullptr,previousWindow=nullptr,volume=nullptr;
-inline HWND speed=nullptr,tilt=nullptr,analog=nullptr;
+inline HWND speed=nullptr,tilt=nullptr,analog=nullptr,distanceBox=nullptr,objectLimitBox=nullptr,objectLimitStatus=nullptr;
 inline HWND modeBox=nullptr,styleBox=nullptr,themeBox=nullptr,keyBoxes[3]{},warning=nullptr;
 inline unsigned menuKey=VK_F6;
 inline int buildingPage=0,currentPage=0;
@@ -18,6 +18,15 @@ inline HWND calibrationButton=nullptr,languageBox=nullptr,profileBox=nullptr;
 inline std::atomic<bool> joystickConnected{false};
 inline HWND gameWindow=nullptr,deviceBox=nullptr,deviceStatus=nullptr,hotStart=nullptr;
 inline fs::path root;
+inline void refreshObjectLimit(){
+    const auto setting=objectLimit::read(objectLimit::defaultEnginePath());
+    const auto text=std::to_wstring(setting.ok&&setting.hasValue?setting.value:objectLimit::suggested);
+    SetWindowTextW(objectLimitBox,text.c_str());
+    SetWindowTextW(objectLimitStatus,setting.ok?(setting.hasValue?
+        L"В Engine.ini сохранён пользовательский лимит. Это не проверка текущего лимита игры.":
+        L"В Engine.ini лимит не задан. Число в поле — пример; нажмите сохранить для изменения."):
+        L"Не удалось прочитать лимит из Engine.ini. Другие настройки не изменены.");
+}
 inline ULONGLONG nextDeviceRefresh=0;
 inline void refreshDevices(){
     if(!deviceBox||SendMessageW(deviceBox,CB_GETDROPPEDSTATE,0,0))return;
@@ -41,7 +50,7 @@ inline void refreshDevices(){
 }
 inline void show();
 inline HWND worldOptions[3]={nullptr,nullptr,nullptr};
-inline const char* optionNames[]={"freeze","npcs","god"};
+inline const char* optionNames[]={"freeze","alternate","god"};
 inline const char* speedValues[]={"0.5","1","2","3","4"};
 inline ULONGLONG pending=0;
 inline ULONGLONG sentAt=0,lastId=0;
@@ -125,11 +134,11 @@ inline void finishAxisSample(){
     resetCalibration(L"Калибровка сохранена и применяется к FPV.");send("calibration 1");
 }
 inline LRESULT CALLBACK proc(HWND h,UINT message,WPARAM wp,LPARAM lp){
-    if(message==WM_CTLCOLORSTATIC&&(reinterpret_cast<HWND>(lp)==warning||reinterpret_cast<HWND>(lp)==status)){
+    if(message==WM_CTLCOLORSTATIC&&(reinterpret_cast<HWND>(lp)==warning||reinterpret_cast<HWND>(lp)==status||reinterpret_cast<HWND>(lp)==objectLimitStatus)){
         auto dc=reinterpret_cast<HDC>(wp);SetBkColor(dc,uiTheme::background());SetTextColor(dc,uiTheme::dark?RGB(255,120,120):RGB(170,20,30));return reinterpret_cast<LRESULT>(uiTheme::brush());
     }
     LRESULT themed=0;if(uiTheme::paint(h,message,wp,lp,themed))return themed;
-    if(message==WM_COMMAND&&LOWORD(wp)>=500&&LOWORD(wp)<=503){selectPage(LOWORD(wp)-500);return 0;}
+    if(message==WM_COMMAND&&LOWORD(wp)>=500&&LOWORD(wp)<=504){selectPage(LOWORD(wp)-500);return 0;}
     if(message==WM_COMMAND&&HIWORD(wp)==CBN_SELCHANGE){
         const auto id=LOWORD(wp);
         if(id==116){const auto choice=SendMessageW(modeBox,CB_GETCURSEL,0,0);if(choice>=0&&choice<3){const char* values[]={"acro","angle","3d"};send(std::string("mode ")+values[choice]);}return 0;}
@@ -151,6 +160,23 @@ inline LRESULT CALLBACK proc(HWND h,UINT message,WPARAM wp,LPARAM lp){
         return 0;
     }
     if(message==WM_COMMAND && HIWORD(wp)==BN_CLICKED){
+        if(LOWORD(wp)==123||LOWORD(wp)==124){
+            const bool reset=LOWORD(wp)==124;int value=0;wchar_t text[64]{};
+            if(!reset){
+                GetWindowTextW(objectLimitBox,text,64);
+                if(GetWindowTextLengthW(objectLimitBox)>=64||!objectLimit::parse(text,value)){SetWindowTextW(objectLimitStatus,L"Введите целое число от 1 до 2147483647, без разделителей.");return 0;}
+            }
+            const auto path=objectLimit::defaultEnginePath();
+            const auto result=reset?objectLimit::reset(path):objectLimit::set(path,value);
+            if(!result.ok){
+                SetWindowTextW(objectLimitStatus,L"Не удалось изменить Engine.ini. Подробности — в журнале программы ввода.");
+                std::wcerr<<L"Object limit update: "<<result.error<<L"\n";return 0;
+            }
+            refreshObjectLimit();
+            SetWindowTextW(objectLimitStatus,reset?L"Пользовательский лимит удалён. Перезапустите игру для возврата её настроек.":
+                L"Лимит сохранён в Engine.ini. Перезапустите игру.");
+            return 0;
+        }
         if(LOWORD(wp)==119){
             unsigned keys[3]{};for(int i=0;i<3;++i){const auto selected=SendMessageW(keyBoxes[i],CB_GETCURSEL,0,0);if(selected<0||static_cast<size_t>(selected)>=keyCodes.size())return 0;keys[i]=keyCodes[selected];}
             if(keys[0]==keys[1]||keys[0]==keys[2]||keys[1]==keys[2]){SetWindowTextW(status,L"Для каждого действия выберите отдельную кнопку.");return 0;}
@@ -162,6 +188,11 @@ inline LRESULT CALLBACK proc(HWND h,UINT message,WPARAM wp,LPARAM lp){
             if(preset<0)preset=controllerProfiles::detect(id);
             if(preset<0){SetWindowTextW(status,L"Нет точного автопрофиля. Выберите базовый профиль или калибруйте стики.");return 0;}
             if(controllerProfiles::write(root,id,preset,true)){send("calibration 1");}else SetWindowTextW(status,L"Не удалось сохранить calibration.lua.");return 0;
+        }
+        if(LOWORD(wp)==122){
+            const auto v=SendMessageW(distanceBox,CB_GETCURSEL,0,0);
+            if(v>=0&&v<=6)send("distance "+std::to_string(v));
+            return 0;
         }
         if(LOWORD(wp)==114){send(SendMessageW(hotStart,BM_GETCHECK,0,0)==BST_CHECKED?"option hotstart 1":"option hotstart 0");return 0;}
         if(LOWORD(wp)==111){osd::showEditor(window);return 0;}
@@ -201,8 +232,8 @@ inline void show(){
         WNDCLASSW cls{};cls.lpfnWndProc=proc;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"ZoneFPVWeather";cls.hCursor=LoadCursorW(nullptr,MAKEINTRESOURCEW(32512));RegisterClassW(&cls);
         window=CreateWindowExW(WS_EX_TOPMOST,cls.lpszClassName,language::tr(L"ZoneFPV — настройки"),WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,CW_USEDEFAULT,CW_USEDEFAULT,700,700,nullptr,nullptr,cls.hInstance,nullptr);ShowWindow(window,SW_HIDE);
         buildingPage=-1;
-        const wchar_t* tabs[]={L"Полёт",L"Контроллер",L"Мир",L"Интерфейс"};
-        for(int i=0;i<4;++i)control(L"BUTTON",tabs[i],WS_TABSTOP,18+i*165,15,155,34,500+i);
+        const wchar_t* tabs[]={L"Полёт",L"Контроллер",L"Мир",L"Интерфейс",L"Прорисовка"};
+        for(int i=0;i<5;++i)control(L"BUTTON",tabs[i],WS_TABSTOP,18+i*132,15,124,34,500+i);
         status=control(L"STATIC",L"Выберите настройки и нажмите кнопку.",0,22,566,625,48);
         control(L"BUTTON",L"Закрыть",WS_TABSTOP,455,616,200,28,103);
         buildingPage=0;
@@ -216,7 +247,7 @@ inline void show(){
         for(auto text:{L"0.5×",L"1×",L"2×",L"3×",L"4×"})SendMessageW(speed,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(text));
         control(L"STATIC",L"Наклон камеры",0,22,240,220,24);tilt=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP,265,236,365,250);
         for(int i=0;i<=60;++i){const auto text=std::to_wstring(i)+L"°";SendMessageW(tilt,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(text.c_str()));}
-        {double v=2;int angle=25,selected=2;std::ifstream f(root/L"flight-settings.txt");f>>v>>angle;for(int i=0;i<5;++i)if(v==std::stod(speedValues[i]))selected=i;SendMessageW(speed,CB_SETCURSEL,selected,0);SendMessageW(tilt,CB_SETCURSEL,std::clamp(angle,0,60),0);}
+        {double v=2;int angle=25,selected=2;std::ifstream f(root/L"flight-settings.txt");f>>v>>angle;for(int i=0;i<4;++i)if(v==std::stod(speedValues[i]))selected=i;SendMessageW(speed,CB_SETCURSEL,selected,0);SendMessageW(tilt,CB_SETCURSEL,std::clamp(angle,0,60),0);}
         control(L"BUTTON",L"Применить к FPV",WS_TABSTOP,265,276,365,30,105);
         control(L"STATIC",L"Вид аналоговой камеры",0,22,328,225,24);styleBox=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_TABSTOP,265,324,365,180,117);
         for(auto text:{L"Выключен",L"Classic FPV",L"Clean analog",L"Monochrome",L"Worn VHS"})SendMessageW(styleBox,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(text));
@@ -229,7 +260,7 @@ inline void show(){
         control(L"STATIC",L"Устройство управления",0,22,74,620,24);deviceBox=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP,22,103,625,250,113);
         deviceStatus=control(L"STATIC",L"",0,22,142,625,42);warning=control(L"STATIC",L"",0,22,190,625,52);
         control(L"STATIC",L"Исходный профиль (Mode 2)",0,22,258,625,24);profileBox=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP,22,289,625,260);
-        for(auto name:{L"Авто: распознать устройство",L"Xbox / XInput",L"RadioMaster Pocket — DirectInput",L"RadioMaster Pocket — WinMM",L"DualSense / DualShock — USB HID",L"RadioMaster / Jumper / FrSky / TBS / BETAFPV — AETR DI",L"FlySky / TAER — DirectInput",L"Generic USB / AETR 1-2-3-4",L"Generic USB / TAER 2-3-1-4",L"Mode 1 / AETR — DirectInput"})SendMessageW(profileBox,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(name));SendMessageW(profileBox,CB_SETCURSEL,0,0);
+        for(auto name:{L"Авто: распознать устройство",L"Xbox / XInput",L"RadioMaster Pocket — DirectInput",L"RadioMaster Pocket — WinMM",L"DualSense — DirectInput",L"RadioMaster / Jumper / FrSky / TBS / BETAFPV — AETR DI",L"FlySky / TAER — DirectInput",L"Generic USB / AETR 1-2-3-4",L"Generic USB / TAER 2-3-1-4",L"Mode 1 / AETR — DirectInput",L"DualShock 4 — DirectInput (USB / Bluetooth)"})SendMessageW(profileBox,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(name));SendMessageW(profileBox,CB_SETCURSEL,0,0);
         control(L"BUTTON",L"Применить исходный профиль",WS_TABSTOP,22,332,625,32,115);
         control(L"STATIC",L"Профиль задаёт начальную раскладку. Если направления не совпадают, выполните калибровку. Ваш прежний профиль сохраняется в резервную копию.",0,22,384,625,70);
         calibrationButton=control(L"BUTTON",L"Калибровать оси",WS_TABSTOP,22,479,625,38,110);
@@ -241,8 +272,10 @@ inline void show(){
         for(auto text:{L"Ясно",L"Облачно",L"Туман",L"Небольшой дождь",L"Дождь",L"Гроза",L"Шторм"})SendMessageW(weather,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(text));SendMessageW(weather,CB_SETCURSEL,0,0);
         control(L"BUTTON",L"Установить погоду",WS_TABSTOP,265,188,365,30,102);
         control(L"STATIC",L"Во время выбора FPV-камера неподвижна.\nЗначения выше — ваш выбор, не показания игры.",0,22,240,620,45);
-        const wchar_t* labels[]={L"Заморозить мир в FPV",L"FPV со свойствами игрока",L"Режим бога"};
-        for(int i=0;i<3;++i){worldOptions[i]=control(L"BUTTON",labels[i],BS_AUTOCHECKBOX|WS_TABSTOP,22,310+i*45,620,32,107+i);int on=0;std::ifstream f(root/(std::string(optionNames[i])+"-settings.txt"));f>>on;SendMessageW(worldOptions[i],BM_SETCHECK,on==1?BST_CHECKED:BST_UNCHECKED,0);}
+        const wchar_t* labels[]={L"Сильно замедлить мир в FPV",L"Альтернативный режим FPV",L"Режим бога"};
+        const int optionY[]={296,336,476};
+        for(int i=0;i<3;++i){worldOptions[i]=control(L"BUTTON",labels[i],BS_AUTOCHECKBOX|WS_TABSTOP,22,optionY[i],620,32,107+i);int on=0;std::ifstream f(root/(std::string(optionNames[i])+"-settings.txt"));f>>on;SendMessageW(worldOptions[i],BM_SETCHECK,on==1?BST_CHECKED:BST_UNCHECKED,0);}
+        control(L"STATIC",L"По умолчанию: игрок скрыто следует за дроном для подгрузки мира и NPC.\nАльтернативный: игрок остаётся на старте; NPC вдали могут не появляться, некоторые стены могут пропускать камеру.",0,42,374,598,96);
         buildingPage=3;
         control(L"BUTTON",L"Редактор OSD",WS_TABSTOP,22,78,625,36,111);
         languageBox=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_TABSTOP,22,138,300,210,112);for(auto text:{L"Русский",L"Українська",L"English",L"Polski",L"Deutsch"})SendMessageW(languageBox,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(text));SendMessageW(languageBox,CB_SETCURSEL,language::current,0);
@@ -253,6 +286,22 @@ inline void show(){
         for(int i=0;i<3;++i){control(L"STATIC",names[i],0,22,221+i*48,310,24);keyBoxes[i]=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_VSCROLL|WS_TABSTOP,345,217+i*48,302,230);for(size_t j=0;j<keyCodes.size();++j){const auto k=keyCodes[j];std::wstring text;if(k>=112)text=L"F"+std::to_wstring(k-111);else if(k>=65)text=std::wstring(1,static_cast<wchar_t>(k));else{const wchar_t* special[]={L"Page Up",L"Page Down",L"End",L"Home",L"Insert",L"Delete"};text=special[j];}SendMessageW(keyBoxes[i],CB_ADDSTRING,0,reinterpret_cast<LPARAM>(text.c_str()));if(k==saved[i])SendMessageW(keyBoxes[i],CB_SETCURSEL,j,0);}}
         control(L"BUTTON",L"Применить кнопки",WS_TABSTOP,22,390,625,34,119);
         control(L"STATIC",L"Выберите разные кнопки. Изменения применяются при запущенной игре.",0,22,444,625,56);
+        buildingPage=4;
+        control(L"STATIC",L"Дальность загрузки геометрии в FPV",0,22,74,620,24);
+        distanceBox=control(L"COMBOBOX",L"",CBS_DROPDOWNLIST|WS_TABSTOP,22,104,620,180);
+        for(auto text:{L"Как сейчас",L"1.25×",L"1.5×",L"2×",L"3×",L"4×",L"5×"})SendMessageW(distanceBox,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(text));
+        {int v=0;std::ifstream f(root/L"world-distance.txt");if(!(f>>v)||v<0||v>6)v=0;SendMessageW(distanceBox,CB_SETCURSEL,v,0);}
+        control(L"BUTTON",L"Применить к FPV",WS_TABSTOP,22,148,620,32,122);
+        control(L"STATIC",L"Общий множитель до 5×: земля, здания, объекты, лес и дальние модели.\nБольшие значения повышают нагрузку и могут снижать FPS.\nПри выходе из FPV исходная дальность возвращается.",0,22,195,620,76);
+        control(L"STATIC",L"Лимит объектов всей игры — gc.MaxObjectsInGame",0,22,282,620,24);
+        objectLimitBox=control(L"EDIT",L"",ES_NUMBER|ES_AUTOHSCROLL|WS_BORDER|WS_TABSTOP,22,314,180,28,125);
+        SendMessageW(objectLimitBox,EM_SETLIMITTEXT,64,0);
+        control(L"BUTTON",L"Сохранить в Engine.ini",WS_TABSTOP,218,312,204,32,123);
+        control(L"BUTTON",L"По умолчанию",WS_TABSTOP,438,312,204,32,124);
+        objectLimitStatus=control(L"STATIC",L"",0,22,354,620,46);
+        refreshObjectLimit();
+        control(L"STATIC",L"Максимум Unreal-объектов в игре: акторов, компонентов, ресурсов.\nПовышение даёт запас для подгрузки, но не ускоряет игру.\nБольше объектов может увеличить расход RAM, время загрузки и паузы GC.\nСлишком маленький лимит может вызвать краш при запуске.\nИзменение действует на всю игру после перезапуска и остаётся после FPV.",0,22,406,620,118);
+        control(L"STATIC",L"Engine.ini: %LOCALAPPDATA%/Stalker2/Saved/Config/Windows",0,22,531,620,22);
         selectPage(currentPage);uiTheme::apply(window);
     }
     ShowWindow(window,SW_SHOW);SetForegroundWindow(window);
