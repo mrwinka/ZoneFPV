@@ -80,4 +80,20 @@ test('NPC anchor rollback restores flags even if return teleport fails',function
     assert(not pcall(anchor.restore,s))
     assert(not pawn.bHidden and pawn.bCanBeDamaged and pawn.collision)
 end)
+test('NPC anchor reports perception registration failure and restores remaining state',function()
+    local pawn={bHidden=true,bCanBeDamaged=false,collision=false}
+    function pawn:K2_SetActorLocation(v)self.position=v end
+    function pawn:SetActorHiddenInGame(v)self.bHidden=v end
+    function pawn:SetActorEnableCollision(v)self.collision=v end
+    local registrations=0
+    local perception={RegisterWithPerceptionSystem=function()
+        registrations=registrations+1;error('injected perception registration failure')
+    end}
+    local original={X=1,Y=2,Z=3}
+    local s={pawn=pawn,npcAnchor={position=original,hidden=false,damage=true,collision=true,perception=perception}}
+    local ok,err=pcall(anchor.restore,s)
+    assert(not ok and tostring(err):find('injected perception registration failure',1,true))
+    assert(registrations==1 and pawn.position==original and not s.npcAnchor)
+    assert(not pawn.bHidden and pawn.bCanBeDamaged and pawn.collision,'registration failure must not strand presentation/collision restoration')
+end)
 print(n..' world option tests passed')

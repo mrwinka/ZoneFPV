@@ -22,3 +22,23 @@ io.open=function() return nil end;assert(not analog.save('mock/',true));io.open=
 local _,command=env.parse('47 analog 1');assert(command=='FPVAnalog 1')
 assert(not env.parse('47 analog 2'));assert(not env.parse('47 analog 1 quit'))
 print('PASS analog preference persistence and command allowlist')
+
+local files={['mock/analog-settings.txt']='0\n',['mock/analog-style.txt']='0\n'}
+local legacyUnavailable=true
+io.open=function(path,mode)
+    if mode=='w' and path=='mock/analog-settings.txt' and legacyUnavailable then return nil end
+    if mode=='r' and not files[path] then return nil end
+    return {read=function()return files[path]end,write=function(_,text)files[path]=text;return true end,close=function()return true end}
+end
+assert(analog.save_style('mock/',3) and analog.load_style('mock/')==3,
+    'a committed authoritative style must succeed even when the legacy flag is unwritable')
+assert(files['mock/analog-settings.txt']=='0\n')
+legacyUnavailable=false;assert(analog.save_style('mock/',2) and analog.load_style('mock/')==2 and analog.load('mock/'))
+io.open=function(path,mode)
+    if mode=='w' and path=='mock/analog-style.txt' then return nil end
+    return {read=function()return files[path]end,write=function(_,text)files[path]=text;return true end,close=function()return true end}
+end
+assert(not analog.save_style('mock/',0) and analog.load_style('mock/')==2 and analog.load('mock/'),
+    'an unavailable authoritative style file must fail before changing the legacy flag')
+io.open=rawOpen
+print('PASS authoritative style commit, legacy compatibility and independent write failures')

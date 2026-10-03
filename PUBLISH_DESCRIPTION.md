@@ -16,9 +16,11 @@ ZoneFPV adds a controllable FPV camera to S.T.A.L.K.E.R. 2 with quadcopter-style
 - Acro, self-leveling Angle and reversible-thrust 3D flight; speed, rates, expo and camera tilt settings.
 - DirectInput, XInput and WinMM; controller selection, initial profiles and guided calibration. Includes a DualShock 4 profile; physical DS4 testing is pending.
 - Main FPV follows the drone with the simulation anchor. Optional Alternative FPV leaves the player at launch: distant NPC simulation does not follow and many objects can be passed through.
-- Sphere-based collision, adjustable geometry loading distance up to 5×, time/weather controls and world freeze.
+- Sphere-based collision and an adjustable rendering-distance multiplier up to 5× for geometry, foliage and distant models. Previous loading distances are restored after flight.
+- Time/weather controls and world freeze. Native rain, falling leaves and ambient crows remain visible in FPV.
 - Configurable OSD, synthesized drone sound, four analog styles, five interface languages and customizable keys.
-- Player/weapon/subtitle hiding and restoration of supported player state after flight. NPCs/mutants retain their interactions with each other.
+- Resizable F6 settings menu and OSD editor, with scaled controls/text and saved window sizes. The OSD preview keeps the game's aspect ratio.
+- Player body, weapon, shadow and subtitle hiding during flight; the game HUD and supported player state return after exit. NPCs and mutants leave the player alone during FPV and retain their interactions with each other.
 
 ## Installation
 
@@ -34,7 +36,7 @@ Higher geometry loading distances increase load and do not guarantee the whole m
 
 ## Object limit
 
-The rendering tab has an optional, manually editable `gc.MaxObjectsInGame` setting. Save writes it to Engine.ini; restart the game to apply it. This is a game-wide object capacity, not an FPS setting. More loaded objects can use more RAM and increase loading/garbage-collection pauses. Game default removes only this override. Full 5× applies to all ten original geometry/foliage/HLOD grids. See [object-limit instructions](OBJECT_LIMIT.md).
+The rendering tab has an optional, manually editable `gc.MaxObjectsInGame` setting. Save writes it to Engine.ini; restart the game to apply it. This is a game-wide object capacity, not an FPS setting. Increasing rendering distance can reduce FPS and use more RAM; a higher object limit can also increase loading and garbage-collection pauses. Raising the limit does not guarantee stability. Game default removes only this override. The selected multiplier, up to 5×, applies to all ten original geometry/foliage/HLOD grids. See [object-limit instructions](https://github.com/mrwinka/ZoneFPV/blob/main/OBJECT_LIMIT.md).
 
 ## Licensing
 
@@ -56,11 +58,13 @@ ZoneFPV добавляет в S.T.A.L.K.E.R. 2 управляемую FPV-кам
 ### Возможности
 
 - Acro, самовыравнивание Angle и двунаправленная тяга 3D; скорость, rates, expo и наклон камеры.
-- DirectInput, XInput и WinMM; выбор устройства, исходные профили и пошаговая калибровка. Добавлен профиль DS4; настоящий контроллер ещё не проверен.
+- DirectInput, XInput и WinMM; выбор устройства, исходные профили и пошаговая калибровка. Есть профиль DualShock 4; проверка на настоящем DS4 ещё не проводилась.
 - Основной FPV переносит центр симуляции вслед за дроном. Альтернативный оставляет игрока на старте: NPC вдали не подгружаются вслед за дроном, через многие объекты можно пролететь.
-- Проверки столкновений объёмом дрона, подгрузка геометрии до 5×, время/погода и заморозка мира.
+- Проверки столкновений объёмом дрона и множитель дальности прорисовки до 5× для геометрии, растительности и дальних моделей. После полёта возвращаются прежние расстояния подгрузки.
+- Управление временем/погодой и заморозка мира. В FPV сохраняется отображение дождя, падающих листьев и ворон.
 - Настраиваемый OSD, звук дрона, четыре аналоговых стиля, пять языков и переназначение кнопок.
-- Скрытие игрока, оружия и субтитров; восстановление поддерживаемых значений состояния после полёта. NPC и мутанты продолжают взаимодействовать между собой.
+- Изменяемый размер меню F6 и редактора OSD: элементы и текст масштабируются, размеры окон сохраняются. Предпросмотр OSD учитывает соотношение сторон игры.
+- Скрытие тела игрока, оружия, тени и субтитров во время полёта; интерфейс игры и поддерживаемые значения состояния восстанавливаются после выхода. NPC и мутанты не атакуют игрока в FPV и продолжают взаимодействовать между собой.
 
 ### Установка
 
@@ -76,7 +80,7 @@ ZoneFPV добавляет в S.T.A.L.K.E.R. 2 управляемую FPV-кам
 
 ### Лимит объектов
 
-В «Прорисовке» можно вручную задать `gc.MaxObjectsInGame` и сохранить в Engine.ini. Требуется перезапуск игры. Это максимальное число Unreal-объектов всей игры, а не настройка FPS. Больше загруженных объектов может увеличить расход RAM, время загрузки и паузы очистки памяти. «По умолчанию» удаляет только этот параметр. Общий множитель до 5× снова применяется ко всем десяти прежним слоям геометрии, леса и дальних моделей. [Подробности](https://github.com/mrwinka/ZoneFPV/blob/main/OBJECT_LIMIT.md).
+В «Прорисовке» можно вручную задать `gc.MaxObjectsInGame` и сохранить в Engine.ini. Требуется перезапуск игры. Это максимальное число Unreal-объектов всей игры, а не настройка FPS. Повышение дальности прорисовки может снизить FPS и увеличить расход RAM; повышенный лимит объектов также может увеличить время загрузки и паузы очистки памяти. Увеличение лимита не гарантирует стабильность. «По умолчанию» удаляет только этот параметр. Выбранный множитель, вплоть до 5×, применяется ко всем десяти исходным слоям геометрии, растительности и дальних моделей. [Подробности](https://github.com/mrwinka/ZoneFPV/blob/main/OBJECT_LIMIT.md).
 
 ### Лицензии
 

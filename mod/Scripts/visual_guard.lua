@@ -15,15 +15,6 @@ local function attempt(state,key,fn)
     end
     return ok
 end
-local function restoreVolume(entry)
-    pcall(function() if valid(entry.object) then entry.object.bEnabled=entry.enabled end end)
-end
-local function restoreVolumes(g)
-    for id,entry in pairs(g.volumes or {}) do
-        restoreVolume(entry)
-        g.volumes[id]=nil
-    end
-end
 local function restoreModifier(entry)
     pcall(function() if valid(entry.object) and not entry.disabled then entry.object:EnableModifier() end end)
 end
@@ -47,63 +38,22 @@ local function cvar(g,s,system,name,wanted)
         if current~=wanted then system:ExecuteConsoleCommand(s.pc,name..' '..wanted,s.pc) end
     end)
 end
-function M.update(s,now,system,playerMode,clearWeather)
+function M.update(s,now,system,_playerMode,clearWeather)
     local g=s.visualGuard
     if g and (not same(g.world,s.world) or not same(g.pc,s.pc)) then M.restore(s);g=nil end
     if not g then
-        g={world=s.world,worldId=s.world and s.world:GetAddress(),pc=s.pc,modifiers={},volumes={},cvars={},unsupported={},nextScan=0,nextClear=0,nextVariables=0,nextVolumes=0}
+        g={world=s.world,pc=s.pc,modifiers={},cvars={},unsupported={},nextScan=0,nextClear=0,nextVariables=0}
         s.visualGuard=g
     end
     if system and (now>=g.nextVariables or g.clearWeather~=clearWeather) then
         g.nextVariables=now+0.25;g.system=system;g.clearWeather=clearWeather
-        -- Region scripts can reset these while the pawn crosses a volume.
-        cvar(g,s,system,'r.PostProcessing.DisableMaterials',1)
         -- Only an explicit Clear selection opts into fog suppression. Restore on
         -- another preset or FPV exit; do not remove intentionally selected fog.
         cvar(g,s,system,'r.Fog',clearWeather and 0 or nil)
         cvar(g,s,system,'r.VolumetricFog',clearWeather and 0 or nil)
         cvar(g,s,system,'r.LocalFogVolume',clearWeather and 0 or nil)
     end
-    if not playerMode then restoreVolumes(g)
-    elseif now>=g.nextVolumes then
-        g.nextVolumes=now+3
-        attempt(g,'regional post-process volumes',function()
-            for id,entry in pairs(g.volumes) do
-                if not valid(entry.object) then g.volumes[id]=nil
-                elseif not same(entry.object:GetWorld(),g.world) then restoreVolume(entry);g.volumes[id]=nil end
-            end
-            local candidates=FindAllOf('PostProcessVolume') or {}
-            for _,v in ipairs(FindAllOf('PostProcessComponent') or {}) do candidates[#candidates+1]=v end
-            local seen={}
-            for _,volume in ipairs(candidates) do
-                if valid(volume) then
-                    local id=volume:GetAddress()
-                    if not seen[id] and not g.volumes[id] then
-                        seen[id]=true
-                        -- Bounded effects need no name reflection; accepted
-                        -- objects keep their classification for this flight.
-                        local selected=not volume.bUnbound
-                        if not selected then
-                            local name=volume:GetFullName():lower()
-                            selected=name:find('psy',1,true) or name:find('anomal',1,true)
-                        end
-                        if selected then
-                            local world=volume:GetWorld()
-                            if valid(world) and world:GetAddress()==g.worldId then
-                                local key='volume '..tostring(id);g.unsupported[key]=nil
-                                g.volumes[id]={object=volume,key=key,enabled=volume.bEnabled}
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-    end
     if now<g.nextClear then return end
-    for id,entry in pairs(g.volumes) do
-        if not valid(entry.object) then g.volumes[id]=nil
-        else attempt(g,entry.key,function() if entry.object.bEnabled then entry.object.bEnabled=false end end) end
-    end
     local cm=s.pc.PlayerCameraManager
     if not valid(cm) then return end
     if not same(g.camera,cm) then
@@ -154,7 +104,6 @@ function M.restore(s)
     for name,value in pairs(g.cvars) do
         pcall(function() g.system:ExecuteConsoleCommand(g.pc,name..' '..tostring(value),g.pc) end)
     end
-    restoreVolumes(g)
     restoreCamera(g)
     s.visualGuard=nil
 end

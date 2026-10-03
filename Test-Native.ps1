@@ -17,15 +17,23 @@ cl /nologo /utf-8 /W4 /WX /EHsc /std:c++17 /O2 /MT "$PSScriptRoot\src\osd_test.c
 if errorlevel 1 exit /b 1
 cl /nologo /utf-8 /W4 /WX /EHsc /std:c++17 /O2 /MT "$PSScriptRoot\src\object_limit_test.cpp" /Fe:object_limit_test.exe
 if errorlevel 1 exit /b 1
+cl /nologo /utf-8 /W4 /WX /EHsc /std:c++17 /O2 /MT "$PSScriptRoot\src\menu_window_test.cpp" /Fe:menu_window_test.exe /link winmm.lib user32.lib gdi32.lib
+if errorlevel 1 exit /b 1
+cl /nologo /utf-8 /W4 /WX /EHsc /std:c++17 /O2 /MT "$PSScriptRoot\src\osd_window_test.cpp" /Fe:osd_window_test.exe /link winmm.lib user32.lib gdi32.lib
+if errorlevel 1 exit /b 1
 calibration_test.exe
 if not "%errorlevel%"=="0" exit /b 1
 osd_test.exe
 if not "%errorlevel%"=="0" exit /b 1
 object_limit_test.exe
 if not "%errorlevel%"=="0" exit /b 1
+menu_window_test.exe
+if not "%errorlevel%"=="0" exit /b 1
+osd_window_test.exe
+if not "%errorlevel%"=="0" exit /b 1
 "@
 $batch=Join-Path $build 'test.cmd'
 [IO.File]::WriteAllText($batch,$commands,[Text.Encoding]::Default)
 & $batch
 if($LASTEXITCODE -ne 0){throw 'Native tests failed.'}
-Write-Output 'PASS native controller profiles/calibration, OSD layout/font and object-limit config tests'
+Write-Output 'PASS native controller profiles/calibration, OSD layout/font, object-limit config and resizable menu/OSD editor tests'

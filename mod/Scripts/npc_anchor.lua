@@ -52,7 +52,10 @@ function M.restore(s)
     end
     restore(function() pawn:K2_SetActorLocation(a.position,false,{},true) end)
     restore(function() pawn.bCanBeDamaged=a.damage end)
-    if a.perception then restore(function() invoke(a.perception,'RegisterWithPerceptionSystem') end) end
+    if a.perception then restore(function()
+        local ok,err=invoke(a.perception,'RegisterWithPerceptionSystem')
+        assert(ok,err)
+    end) end
     restore(function() pawn:SetActorHiddenInGame(a.hidden) end)
     restore(function() pawn:SetActorEnableCollision(a.collision) end)
     s.npcAnchor=nil

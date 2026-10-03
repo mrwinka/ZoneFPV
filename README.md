@@ -1,14 +1,14 @@
 # ZoneFPV — FPV Drone Camera
 
-Source snapshot for **0.2.0 RC4**, a public-beta UE4SS mod for STALKER 2 on Windows x64.
+Source for the stable **0.2.0** release, a UE4SS mod for STALKER 2 on Windows x64.
 
 [Nexus Mods page](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
 
-This repository provides the source for review and local compilation. It does not contain a prebuilt executable, UE4SS binaries, game assets, personal settings or logs. The Nexus archive is undergoing quarantine review; this source publication does not establish antivirus clearance.
+This repository provides the source for review and local compilation. It does not contain a prebuilt executable, UE4SS binaries, game assets, personal settings or logs. Nexus controls its own file review and scan status; see its Files page for current availability.
 
 ## Ready-to-install release
 
-Download **ZoneFPV-0.2.0-RC4.zip** from the [GitHub release list](https://github.com/mrwinka/ZoneFPV/releases). RC2 and RC3 remain available separately. RC4 adds main/alternative FPV guidance, stronger collision checks, player-state protection, loading distance through 5×, optional manual object-limit configuration and a DualShock 4 DirectInput profile. See [CHANGELOG.md](CHANGELOG.md), [RELEASE_NOTES.md](RELEASE_NOTES.md) and [OBJECT_LIMIT.md](OBJECT_LIMIT.md) for changes and known limitations.
+Download **ZoneFPV-0.2.0.zip** from the [GitHub release list](https://github.com/mrwinka/ZoneFPV/releases). Earlier release candidates remain available separately. Version 0.2.0 includes main/alternative FPV, stronger collision, restored player/HUD state, rain/leaf/bird effects, resizable settings and OSD editor windows, geometry loading through 5×, optional manual object-limit configuration and a DualShock 4 DirectInput profile (physical testing pending). See [CHANGELOG.md](CHANGELOG.md), [RELEASE_NOTES.md](RELEASE_NOTES.md) and [OBJECT_LIMIT.md](OBJECT_LIMIT.md) for changes and known limitations.
 
 ## Build the native helper
 
@@ -43,7 +43,7 @@ PowerShell, from the repository root:
 .\Test.ps1 -LuaPath 'C:\path\to\approved\lua.exe'
 ```
 
-Lua tests require an independently installed Lua 5.4 interpreter. The optimized MSVC build, all 19 Lua suites, 45-file Lua syntax checks, native profile/OSD/object-limit tests and installer preservation checks passed for the tested RC4 code. Run `.\Test-Native.ps1` for the native suites. The mod author reports that the RC4 test build works; physical DS4 testing and broader configurations remain unverified. See [release status](RELEASE_STATUS.md).
+Lua tests require an independently installed Lua 5.4 interpreter. The optimized MSVC build, all 21 Lua suites, all five native suites and installer preservation/rollback checks passed for the tested code. Run `.\Test-Native.ps1` for the native suites. The mod author completed in-game checks and approved the stable 0.2.0 release; physical DS4 testing remains pending. See [release status](RELEASE_STATUS.md).
 
 ## Review map
 

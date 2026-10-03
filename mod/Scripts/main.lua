@@ -11,6 +11,8 @@ local publishTelemetry=dofile(here..'telemetry.lua').new(root,flight,cfg)
 local visualGuard=dofile(here..'visual_guard.lua')
 local environmentGuard=dofile(here..'environment_guard.lua')
 local playerVisibility=dofile(here..'player_visibility.lua')
+local fpvParticles=dofile(here..'fpv_particles.lua')
+fpvParticles.worldLeaves=dofile(here..'leaf_world_visibility.lua')
 local playerGuard=dofile(here..'player_guard.lua')
 local aiGuard=dofile(here..'ai_guard.lua')
 local playerUI=dofile(here..'player_ui.lua')
@@ -174,7 +176,7 @@ local function exit(reason)
     restore('world distance',function() worldDistance.restore(s,log) end)
     restore('camera effects',function() visualGuard.restore(s) end)
     restore('regional fog',function() regionalFog.restore(s) end)
-    restore('player UI',function() playerUI.restore(s,gameplay) end)
+    restore('FPV weather particles',function() fpvParticles.restore(s) end)
     restore('player equipment',function() playerVisibility.restore(s) end)
     restore('player AI detection',function() aiGuard.restore(s,log) end)
     if s.movementFrozen and valid(s.movement) then
@@ -194,9 +196,11 @@ local function exit(reason)
         if s.lookLocked then restore('look',function() s.pc:SetIgnoreLookInput(false) end) end
         if s.pawnDisabled and valid(s.pawn) then restore('pawn input',function() s.pawn:EnableInput(s.pc) end) end
         if valid(s.hud) then restore('HUD',function() s.hud.bShowHUD=s.hudVisible end) end
-        if s.widgetsHidden then restore('HUD widgets',function() system:ExecuteConsoleCommand(s.pc,'XShowAllWidget',s.pc) end) end
     end
     if valid(s.camera) then restore('camera destroy',function() s.camera:K2_DestroyActor() end) end
+    -- Native view/input changes can rebuild the HUD. Restore its session-local
+    -- widget state only after returning to the character and removing the camera.
+    restore('player UI',function() playerUI.restore(s,gameplay) end)
     lastToggle=clock()
     log('Character mode: '..reason)
 end
@@ -215,6 +219,9 @@ local function enter(p)
     if not neutral and not options.hotstart then log(cfg.flight_mode=='3d' and '3D: center throttle before entering FPV.' or 'Lower throttle before entering FPV.');return end
     local cm=pc.PlayerCameraManager
     if not valid(cm) then error('PlayerCameraManager missing') end
+    -- A new flight inherits the game's current weather. Only a weather command
+    -- sent during this flight may request extra Clear fog suppression.
+    selectedWeather=nil
     local position=meters(cm:GetCameraLocation())
     local rotation=cm:GetCameraRotation()
     if not valid(cameraClass) then cameraClass=StaticFindObject('/Script/Engine.CameraActor') end
@@ -235,12 +242,10 @@ local function enter(p)
     s.camera:SetActorEnableCollision(false)
     s.flight=flight.new(position,rotation.Yaw)
     playerVisibility.update(s,clock())
+    fpvParticles.update(s,clock(),root,log)
     s.startYaw=rotation.Yaw
     s.hud=pc:GetHUD()
     if valid(s.hud) then s.hudVisible=s.hud.bShowHUD;s.hud.bShowHUD=false end
-    s.widgetsHidden=true
-    system:ExecuteConsoleCommand(pc,'XHideAllWidget',pc)
-    s.nextHudHide=clock()+0.5
     pc:SetIgnoreMoveInput(true);s.moveLocked=true
     pc:SetIgnoreLookInput(true);s.lookLocked=true
     s.pawn:DisableInput(pc);s.pawnDisabled=true
@@ -256,7 +261,7 @@ local function enter(p)
     pc:SetViewTargetWithBlend(s.camera,0,0,0,false)
     lastToggle=clock()
     log('FPV active. F8 return; F9 reset. Controller calibration '..(calibration and 'loaded' or 'DEFAULT AETR'))
-    log('ZoneFPV 0.2.0 RC4. Collision: simple + complex sphere sweeps, trace channel + player profile.')
+    log('ZoneFPV 0.2.0. Collision: simple + complex sphere sweeps, trace channel + player profile.')
 end
 local function collide(s,old)
     if not cfg.collision then return end
@@ -310,11 +315,6 @@ local function update()
     local wasFrozen=s.freezeOwned
     worldFreeze.set(s,options.freeze,gameplay)
     if valid(s.hud) and s.hud.bShowHUD then s.hud.bShowHUD=false end
-    if clock()>=s.nextHudHide then
-        stage='hide HUD'
-        system:ExecuteConsoleCommand(s.pc,'XHideAllWidget',s.pc)
-        s.nextHudHide=clock()+0.5
-    end
     if not valid(s.movement) then exit('character movement unavailable');return end
     -- Game scripts may request falling even though player input is disabled.
     if s.movement.MovementMode~=0 then
@@ -389,6 +389,7 @@ local function update()
         playerVisibility.update(s,realNow)
         s.nextVisibilityUpdate=realNow+0.1
     end
+    fpvParticles.update(s,realNow,root,log)
     if (s.npcAnchor~=nil)~=options.npcs or not s.nextAnchorUpdate or clock()>=s.nextAnchorUpdate then
         stage='player streaming anchor'
         npcAnchor.update(s,options.npcs,vec(pos))

@@ -3,13 +3,14 @@ package.path='mod/Scripts/?.lua;'..package.path
 local testClock=10
 local rawOpen,rawClock,rawTime=io.open,os.clock,os.time
 local line,loop,keys,audioLine,widgetsHidden,hideCalls
-local pc,pawn,camera,hud,world,movement
+local pc,pawn,camera,hud,hudRoot,world,movement
 local failSpawn,failView,spawned,destroyed
 local paused,frozenTime,timeOffset,timeDilation
-local environmentLine
+local environmentLine,consoleValues
 local function object(t) t=t or {};function t:IsValid() return not self.invalid end;function t:GetAddress() return self.address or self end;return t end
 local function reset(options)
     options=options or {};paused=false;timeOffset=0;timeDilation=1;environmentLine=nil
+    consoleValues={['r.Fog']=1,['r.VolumetricFog']=1,['r.LocalFogVolume']=1,['r.PostProcessing.DisableMaterials']=0}
     testClock=10;keys={};spawned=0;destroyed=0;failSpawn=false;failView=false;widgetsHidden=false;hideCalls=0
     hud=object({bShowHUD=true})
     movement=object({MovementMode=1,CustomMovementMode=0,ticking=true,
@@ -31,10 +32,18 @@ local function reset(options)
         camera=object({transforms=0,CameraComponent=object({SetFieldOfView=function() end}),
             SetTickableWhenPaused=function() end,
             SetActorEnableCollision=function() end,
-            K2_DestroyActor=function(s) destroyed=destroyed+1;s.invalid=true end,
+            K2_DestroyActor=function(s)
+                destroyed=destroyed+1;s.invalid=true
+                if options.resetHUDOnCameraDestroy then hudRoot:SetRenderOpacity(0);hudRoot:SetVisibility(1) end
+            end,
             K2_SetActorLocationAndRotation=function(s,pos,rotation) s.position=pos;s.rotation=rotation;s.transforms=s.transforms+1 end})
         return camera
     end})
+    hudRoot=object({opacity=.75,visibility=0,GetWorld=function()return world end,
+        GetRenderOpacity=function(s)return s.opacity end,GetVisibility=function(s)return s.visibility end,
+        SetRenderOpacity=function(s,v)s.opacity=v end,
+        SetVisibility=function(s,v)s.visibility=v;widgetsHidden=v==1;if v==1 then hideCalls=hideCalls+1 end end})
+    FindAllOf=function(name)return name=='PlayerGameHUDView' and {hudRoot} or {} end
     pc=object({Pawn=pawn,move=0,look=0,view=pawn,
         bShouldPerformFullTickWhenPaused=false,PrimaryActorTick={bTickEvenWhenPaused=false},
         SetTickableWhenPaused=function(s,b) s.PrimaryActorTick.bTickEvenWhenPaused=b end,
@@ -64,10 +73,12 @@ local function reset(options)
         BeginDeferredActorSpawnFromClass=function() return world:SpawnActor() end,
         FinishSpawningActor=function(_,actor) return actor end})
     local system=object({SphereTraceSingle=function() return false end,
+        GetConsoleVariableIntValue=function(_,name)return consoleValues[name]end,
         ExecuteConsoleCommand=function(_,_,command)
-            if command=='XHideAllWidget' then widgetsHidden=true;hideCalls=hideCalls+1
-            elseif command=='XShowAllWidget' then widgetsHidden=false
-            elseif command:match('^XForceWeather ') then
+            local name,value=command:match('^(%S+) (%d+)$')
+            if consoleValues[name]~=nil then consoleValues[name]=tonumber(value)end
+            assert(command~='XHideAllWidget' and command~='XShowAllWidget','FPV must not mutate global widget/view-manager state')
+            if command:match('^XForceWeather ') then
                 timeOffset=timeOffset+100;testClock=testClock+2;pc.view=pawn
             end
         end})
@@ -95,7 +106,8 @@ local function reset(options)
         end
         if path:find('input.txt',1,true) then return {read=function() return line end,close=function() end} end
         if path:find('audio.txt',1,true) then return {write=function(_,text) audioLine=text end,close=function() end} end
-        if path:find('telemetry.txt',1,true) or path:find('performance.txt',1,true) then
+        if path:find('telemetry.txt',1,true) or path:find('performance.txt',1,true)
+            or path:find('particle-mirror.txt',1,true) or path:find('leaf-world.txt',1,true) then
             return {write=function() return true end,close=function() end}
         end
         return rawOpen(path,mode)
@@ -110,10 +122,13 @@ local function restored()
     assert(not pawn.disabled,'pawn input leaked');assert(hud.bShowHUD,'HUD not restored')
     assert(movement.MovementMode==1 and movement.ticking,'character movement state not restored')
     assert(not widgetsHidden,'game widgets not restored')
+    assert(hudRoot.opacity==.75 and hudRoot.visibility==0,'native HUD root snapshot not restored')
     assert(not paused and timeDilation==1 and not pc.bShouldPerformFullTickWhenPaused and not pc.PrimaryActorTick.bTickEvenWhenPaused,'world freeze leaked')
 end
 reset();toggle();assert(spawned==1 and pc.view==camera and pawn.disabled);toggle();restored();assert(destroyed==1 and pc.view==pawn)
 print('PASS toggle restores character and destroys camera')
+reset({resetHUDOnCameraDestroy=true});toggle();toggle();restored()
+print('PASS native HUD snapshot restores after camera/view teardown without opening Esc')
 reset();failSpawn=true;toggle();restored();assert(spawned==0)
 print('PASS spawn failure rolls back without locks')
 reset();failView=true;toggle();restored();assert(destroyed==1)
@@ -177,13 +192,13 @@ restored()
 print('PASS audio activates with FPV and becomes silent on controller timeout')
 io.open,os.clock,os.time=rawOpen,rawClock,rawTime
 reset();toggle();assert(widgetsHidden)
-hud.bShowHUD=true;widgetsHidden=false
+hud.bShowHUD=true;widgetsHidden=false;hudRoot.opacity=.75;hudRoot.visibility=0
 for i=2,62 do
     line=string.format('1 %d 100000 1 1 32767 32767 0 32767 0 0 0 %d',i,i);tick()
 end
 assert(not hud.bShowHUD and widgetsHidden and hideCalls>=2,'HUD regenerated by the game must be hidden again')
 toggle();restored()
-print('PASS regenerated HUD is hidden during flight and game widgets return on exit')
+print('PASS regenerated native HUD is suppressed during flight and restores without global hide/show commands')
 io.open,os.clock,os.time=rawOpen,rawClock,rawTime
 reset();toggle();testClock=testClock+1.1
 line='1 2 100000 1 1 32767 32767 0 32767 0 0 0 2';tick()
@@ -230,4 +245,22 @@ assert(camera.transforms==heldTransforms+1 and math.abs(camera.rotation.Pitch-45
 toggle();restored()
 print('PASS camera writes follow motion/reset/tilt changes and held callbacks leave the transform alone')
 io.open,os.clock,os.time=rawOpen,rawClock,rawTime
-print('20 adapter contract tests passed')
+reset();environmentLine='400 weather Clearly';testClock=testClock+.11;tick()
+assert(destroyed==0 and spawned==0)
+line='2 2 100000 1 1 32767 32767 0 32767 0 0 0 1 2';toggle()
+assert(consoleValues['r.Fog']==1 and consoleValues['r.VolumetricFog']==1 and consoleValues['r.LocalFogVolume']==1,
+    'a Clear command before flight must not suppress the weather on entry')
+line='2 3 100000 1 1 32767 32767 0 32767 0 0 0 1 3'
+environmentLine='401 weather Clearly';testClock=testClock+.11;tick()
+assert(consoleValues['r.Fog']==0 and consoleValues['r.VolumetricFog']==0 and consoleValues['r.LocalFogVolume']==0,
+    'an explicit Clear command in flight must still remove fog')
+line='2 4 100000 1 1 32767 32767 0 32767 0 0 0 1 4';tick();toggle();restored()
+assert(consoleValues['r.Fog']==1 and consoleValues['r.VolumetricFog']==1 and consoleValues['r.LocalFogVolume']==1)
+line='2 5 100000 1 1 32767 32767 0 32767 0 0 0 1 5';toggle()
+assert(consoleValues['r.Fog']==1 and consoleValues['r.VolumetricFog']==1 and consoleValues['r.LocalFogVolume']==1,
+    'a previous flight Clear selection must not suppress a new flight weather')
+assert(consoleValues['r.PostProcessing.DisableMaterials']==0,'flight must not disable weather materials')
+toggle();restored()
+print('PASS Clear selection is scoped to one flight and entry retains current weather')
+io.open,os.clock,os.time=rawOpen,rawClock,rawTime
+print('21 adapter contract tests passed')

@@ -1,11 +1,13 @@
 #pragma once
 #include <windowsx.h>
+#include <atomic>
 #include <cmath>
 #include "ui_theme.h"
 #define SendMessageW language::message
 namespace osd {
 inline fs::path root;
-inline HWND overlay=nullptr,editor=nullptr,preview=nullptr,list=nullptr,sizeBox=nullptr,colorBox=nullptr,enabledBox=nullptr,masterBox=nullptr,styleBox=nullptr;
+inline HWND overlay=nullptr,preview=nullptr,list=nullptr,sizeBox=nullptr,colorBox=nullptr,enabledBox=nullptr,masterBox=nullptr,styleBox=nullptr;
+inline std::atomic<HWND> editor{nullptr};
 inline bool editing=false,enabled=true,cursorMode=false;
 inline int selected=0,drag=-1,crossStyle=0;
 inline ULONGLONG nextPoll=0,lastChange=0,lastSeq=0;
@@ -48,6 +50,72 @@ inline SIZE bitmapText(HDC dc,const wchar_t* text,int x,int y,int height,int col
     return {count*width,height};
 }
 inline double screenAspect=static_cast<double>(GetSystemMetrics(SM_CXSCREEN))/std::max(1,GetSystemMetrics(SM_CYSCREEN));
+struct EditorControlLayout {HWND handle;int x,y,width,height;};
+inline std::vector<EditorControlLayout> editorControls;
+inline int editorWidth=0,editorHeight=0,editorFontHeight=0;
+inline LOGFONTW editorBaseFont{};
+inline HFONT editorFont=nullptr;
+inline bool editorStartMaximized=false;
+inline constexpr DWORD editorStyle=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|WS_MAXIMIZEBOX|WS_CLIPCHILDREN;
+inline SIZE editorWindowSize(HWND h){
+    int width=1120,height=690,maximized=0;std::string extra;
+    std::ifstream file(root/L"osd-editor-window.txt");
+    if(!(file>>width>>height>>maximized)||(file>>extra)||width<800||height<520||
+       width>8192||height>8192||(maximized!=0&&maximized!=1)){
+        width=1120;height=690;maximized=0;
+    }
+    editorStartMaximized=maximized!=0;
+    MONITORINFO monitor{};monitor.cbSize=sizeof(monitor);
+    if(GetMonitorInfoW(MonitorFromWindow(h,MONITOR_DEFAULTTONEAREST),&monitor)){
+        width=std::min(width,static_cast<int>(monitor.rcWork.right-monitor.rcWork.left));
+        height=std::min(height,static_cast<int>(monitor.rcWork.bottom-monitor.rcWork.top));
+    }
+    return {width,height};
+}
+inline void saveEditorWindowSize(HWND h=editor.load()){
+    if(!h)return;
+    WINDOWPLACEMENT placement{};placement.length=sizeof(placement);
+    if(!GetWindowPlacement(h,&placement))return;
+    const auto& rect=placement.rcNormalPosition;
+    const auto temp=root/L"osd-editor-window.tmp",destination=root/L"osd-editor-window.txt";
+    std::ofstream file(temp);file<<rect.right-rect.left<<' '<<rect.bottom-rect.top<<' '<<(IsZoomed(h)?1:0)<<'\n';file.close();
+    if(file)MoveFileExW(temp.c_str(),destination.c_str(),MOVEFILE_REPLACE_EXISTING);
+}
+inline void resizeEditor(HWND h){
+    if(editorWidth<=0||editorHeight<=0||editorControls.empty())return;
+    RECT client{};if(!GetClientRect(h,&client)||client.right<=0||client.bottom<=0)return;
+    const double scaleX=static_cast<double>(client.right)/editorWidth;
+    const double scaleY=static_cast<double>(client.bottom)/editorHeight;
+    const auto height=static_cast<int>(std::lround(editorBaseFont.lfHeight*std::min(scaleX,scaleY)));
+    if(height!=editorFontHeight){
+        auto font=editorBaseFont;font.lfHeight=height;
+        if(const auto replacement=CreateFontIndirectW(&font)){
+            for(const auto& item:editorControls)SendMessageW(item.handle,WM_SETFONT,reinterpret_cast<WPARAM>(replacement),FALSE);
+            if(editorFont)DeleteObject(editorFont);
+            editorFont=replacement;editorFontHeight=height;
+        }
+    }
+    const auto scaled=[](int value,double scale){return static_cast<int>(std::lround(value*scale));};
+    constexpr UINT flags=SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_NOREDRAW;
+    for(const auto& item:editorControls){
+        int x=scaled(item.x,scaleX),y=scaled(item.y,scaleY);
+        int width=scaled(item.width,scaleX),controlHeight=scaled(item.height,scaleY);
+        if(item.handle==preview){
+            // Fit the *client* preview to the game aspect, allowing for its border.
+            // The editor window size never changes the saved OSD coordinates.
+            RECT border{};AdjustWindowRectEx(&border,static_cast<DWORD>(GetWindowLongPtrW(preview,GWL_STYLE)),FALSE,0);
+            const int borderWidth=border.right-border.left,borderHeight=border.bottom-border.top;
+            const int availableHeight=scaled(530,scaleY);
+            const int innerWidth=std::max(1,width-borderWidth),innerHeight=std::max(1,availableHeight-borderHeight);
+            const auto aspect=std::isfinite(screenAspect)&&screenAspect>0?screenAspect:16./9.;
+            const int fittedWidth=std::max(1,std::min(innerWidth,static_cast<int>(std::floor(innerHeight*aspect))));
+            controlHeight=std::max(1,static_cast<int>(std::lround(fittedWidth/aspect)))+borderHeight;
+            x+=(width-fittedWidth-borderWidth)/2;width=fittedWidth+borderWidth;
+        }
+        SetWindowPos(item.handle,nullptr,x,y,width,controlHeight,flags);
+    }
+    RedrawWindow(h,nullptr,nullptr,RDW_INVALIDATE|RDW_ERASE|RDW_ALLCHILDREN);
+}
 inline HFONT font(int size){size=std::clamp(size,10,96);auto& f=fonts[fontChoice][size-10];if(!f)f=CreateFontW(-size,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,FIXED_PITCH,fontNames[fontChoice]);return f;}
 
 struct Surface{HDC dc=nullptr;HBITMAP bitmap=nullptr;HGDIOBJ old=nullptr;int w=0,h=0;
@@ -132,8 +200,25 @@ inline LRESULT CALLBACK overlayProc(HWND h,UINT m,WPARAM wp,LPARAM lp){
     return DefWindowProcW(h,m,wp,lp);
 }
 inline LRESULT CALLBACK editorProc(HWND h,UINT m,WPARAM wp,LPARAM lp){
+    if(m==WM_GETMINMAXINFO){
+        auto limits=reinterpret_cast<MINMAXINFO*>(lp);
+        int width=800,height=520;MONITORINFO monitor{};monitor.cbSize=sizeof(monitor);
+        if(GetMonitorInfoW(MonitorFromWindow(h,MONITOR_DEFAULTTONEAREST),&monitor)){
+            width=std::min(width,static_cast<int>(monitor.rcWork.right-monitor.rcWork.left));
+            height=std::min(height,static_cast<int>(monitor.rcWork.bottom-monitor.rcWork.top));
+        }
+        limits->ptMinTrackSize={width,height};return 0;
+    }
+    if(m==WM_SIZE){if(wp!=SIZE_MINIMIZED)resizeEditor(h);return 0;}
+    if(m==WM_EXITSIZEMOVE){saveEditorWindowSize(h);return 0;}
+    if(m==WM_DESTROY)saveEditorWindowSize(h);
+    if(m==WM_NCDESTROY){
+        editorControls.clear();editorWidth=editorHeight=editorFontHeight=0;
+        if(editorFont){DeleteObject(editorFont);editorFont=nullptr;}
+        previewSurface.clear();preview=nullptr;drag=-1;editing=false;
+    }
     LRESULT themed=0;if(uiTheme::paint(h,m,wp,lp,themed))return themed;
-    if(m==WM_CLOSE){save();editing=false;ShowWindow(h,SW_HIDE);return 0;}
+    if(m==WM_CLOSE){save();saveEditorWindowSize(h);editing=false;ShowWindow(h,SW_HIDE);return 0;}
     if(m==WM_COMMAND){const int id=LOWORD(wp),event=HIWORD(wp);
         if(id==201&&event==LBN_SELCHANGE){selected=static_cast<int>(SendMessageW(list,LB_GETCURSEL,0,0));refreshControls();}
         if(id==202&&event==BN_CLICKED){items[selected].visible=SendMessageW(enabledBox,BM_GETCHECK,0,0)==BST_CHECKED;save();refreshControls();}
@@ -148,11 +233,14 @@ inline LRESULT CALLBACK editorProc(HWND h,UINT m,WPARAM wp,LPARAM lp){
     }
     return DefWindowProcW(h,m,wp,lp);
 }
-inline HWND child(const wchar_t* cls,const wchar_t* text,DWORD style,int x,int y,int w,int h,int id=0){auto c=CreateWindowW(cls,language::tr(text),WS_CHILD|WS_VISIBLE|WS_TABSTOP|style,x,y,w,h,editor,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),GetModuleHandleW(nullptr),nullptr);SendMessageW(c,WM_SETFONT,reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),TRUE);return c;}
-inline void showEditor(HWND owner){
-    if(!editor){WNDCLASSW c{};c.hInstance=GetModuleHandleW(nullptr);c.hCursor=LoadCursorW(nullptr,MAKEINTRESOURCEW(32512));c.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);c.lpfnWndProc=editorProc;c.lpszClassName=L"ZoneFPVOSDEditor";RegisterClassW(&c);editor=CreateWindowExW(WS_EX_TOPMOST,c.lpszClassName,L"ZoneFPV OSD",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,CW_USEDEFAULT,CW_USEDEFAULT,1120,690,owner,nullptr,c.hInstance,nullptr);
+inline HWND child(const wchar_t* cls,const wchar_t* text,DWORD style,int x,int y,int w,int h,int id=0){auto c=CreateWindowW(cls,language::tr(text),WS_CHILD|WS_VISIBLE|WS_TABSTOP|style,x,y,w,h,editor.load(),reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),GetModuleHandleW(nullptr),nullptr);SendMessageW(c,WM_SETFONT,reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),TRUE);editorControls.push_back({c,x,y,w,h});return c;}
+inline void createEditor(HWND owner){
+    if(!editor.load()){WNDCLASSW c{};c.hInstance=GetModuleHandleW(nullptr);c.hCursor=LoadCursorW(nullptr,MAKEINTRESOURCEW(32512));c.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);c.lpfnWndProc=editorProc;c.lpszClassName=L"ZoneFPVOSDEditor";RegisterClassW(&c);editor=CreateWindowExW(WS_EX_TOPMOST,c.lpszClassName,L"ZoneFPV OSD",editorStyle,CW_USEDEFAULT,CW_USEDEFAULT,1120,690,owner,nullptr,c.hInstance,nullptr);
+        if(!editor.load())return;
+        RECT client{};GetClientRect(editor.load(),&client);editorWidth=client.right;editorHeight=client.bottom;
+        GetObjectW(GetStockObject(DEFAULT_GUI_FONT),sizeof(editorBaseFont),&editorBaseFont);editorControls.clear();
         masterBox=child(L"BUTTON",L"OSD on",BS_AUTOCHECKBOX,20,15,200,28,205);SendMessageW(masterBox,BM_SETCHECK,enabled?BST_CHECKED:BST_UNCHECKED,0);
-        list=child(L"LISTBOX",L"",LBS_NOTIFY|WS_BORDER,20,55,235,265,201);for(auto n:names)SendMessageW(list,LB_ADDSTRING,0,reinterpret_cast<LPARAM>(n));SendMessageW(list,LB_SETCURSEL,0,0);
+        list=child(L"LISTBOX",L"",LBS_NOTIFY|WS_BORDER,20,55,235,265,201);for(auto n:names)SendMessageW(list,LB_ADDSTRING,0,reinterpret_cast<LPARAM>(n));SendMessageW(list,LB_SETCURSEL,selected,0);
         enabledBox=child(L"BUTTON",L"Visible",BS_AUTOCHECKBOX,20,330,210,25,202);
         child(L"STATIC",L"Size (14-72)",0,20,365,130,24);sizeBox=child(L"EDIT",L"24",ES_NUMBER|WS_BORDER,160,360,80,26,203);
         colorBox=child(L"COMBOBOX",L"",CBS_DROPDOWNLIST,20,405,220,160,204);for(auto name:{L"White",L"Green",L"Yellow",L"Cyan",L"Red"})SendMessageW(colorBox,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(name));
@@ -161,14 +249,21 @@ inline void showEditor(HWND owner){
         child(L"BUTTON",L"Reset layout",0,20,535,220,30,206);child(L"BUTTON",L"Save / close",0,20,580,220,30,208);
         child(L"STATIC",L"Drag elements. Changes are saved automatically. Preview uses sample values when not flying.",0,280,15,800,40);
         c.lpszClassName=L"ZoneFPVOSDPreview";c.lpfnWndProc=previewProc;RegisterClassW(&c);preview=child(c.lpszClassName,L"",WS_BORDER,280,65,800,static_cast<int>(std::min(530.,800./screenAspect)));refreshControls();
+        const auto dimensions=editorWindowSize(editor.load());
+        SetWindowPos(editor.load(),nullptr,0,0,dimensions.cx,dimensions.cy,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        resizeEditor(editor.load());
     }
-    uiTheme::apply(editor);editing=true;ShowWindow(editor,SW_SHOW);SetForegroundWindow(editor);
 }
-inline bool focused(){auto fg=GetForegroundWindow();return editor&&IsWindowVisible(editor)&&(fg==editor||IsChild(editor,fg));}
+inline void showEditor(HWND owner){
+    const bool first=!editor.load();createEditor(owner);
+    const auto editorWindow=editor.load();if(!editorWindow)return;
+    uiTheme::apply(editorWindow);editing=true;ShowWindow(editorWindow,first&&editorStartMaximized?SW_SHOWMAXIMIZED:SW_SHOW);SetForegroundWindow(editorWindow);
+}
+inline bool focused(){const auto editorWindow=editor.load();auto fg=GetForegroundWindow();return editorWindow&&IsWindowVisible(editorWindow)&&(fg==editorWindow||IsChild(editorWindow,fg));}
 inline void pump(HWND game,HWND menuWindow){
     const bool menuOpen=menuWindow!=nullptr;
     const auto now=GetTickCount64();if(now<nextPoll)return;nextPoll=now+50;
-    if(editing&&!IsWindowVisible(editor))editing=false;
+    if(editing&&!IsWindowVisible(editor.load()))editing=false;
     if(!game&&!editing){if(overlay)ShowWindow(overlay,SW_HIDE);return;}
     std::ifstream f(root/L"telemetry.txt");int ver=0,on=0;ULONGLONG seq=0,end=0;Data d;
     if(f>>ver>>seq>>on>>d.speed>>d.altitude>>d.distance>>d.pitch>>d.roll>>d.heading>>d.home>>d.seconds>>d.climb>>d.throttle>>end&&ver==1&&seq==end){
@@ -177,10 +272,14 @@ inline void pump(HWND game,HWND menuWindow){
     }
     if(now-lastChange>500)data.active=false;
     if(editing)InvalidateRect(preview,nullptr,FALSE);
-    if(!game||IsIconic(game)||(!(data.active&&enabled)&&!menuOpen)){if(overlay)ShowWindow(overlay,SW_HIDE);return;}
+    if(!game||IsIconic(game)){if(overlay)ShowWindow(overlay,SW_HIDE);return;}
+    RECT rc{};GetClientRect(game,&rc);if(rc.right<1||rc.bottom<1)return;
+    const auto aspect=static_cast<double>(rc.right)/rc.bottom;
+    if(aspect!=screenAspect){screenAspect=aspect;if(const auto editorWindow=editor.load())resizeEditor(editorWindow);}
+    if(!(data.active&&enabled)&&!menuOpen){if(overlay)ShowWindow(overlay,SW_HIDE);return;}
     if(!overlay){WNDCLASSW c{};c.hInstance=GetModuleHandleW(nullptr);c.lpfnWndProc=overlayProc;c.lpszClassName=L"ZoneFPVOSD";c.hCursor=LoadCursorW(nullptr,MAKEINTRESOURCEW(32512));RegisterClassW(&c);overlay=CreateWindowExW(WS_EX_TOPMOST|WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,c.lpszClassName,L"",WS_POPUP,0,0,1,1,nullptr,nullptr,c.hInstance,nullptr);SetLayeredWindowAttributes(overlay,RGB(0,0,0),255,LWA_COLORKEY);}
     if(cursorMode!=menuOpen){cursorMode=menuOpen;SetWindowLongPtrW(overlay,GWL_EXSTYLE,WS_EX_TOPMOST|WS_EX_LAYERED|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW|(menuOpen?0:WS_EX_TRANSPARENT));}
-    RECT rc{};GetClientRect(game,&rc);if(rc.right<1||rc.bottom<1)return;screenAspect=static_cast<double>(rc.right)/rc.bottom;if(editing)SetWindowPos(preview,nullptr,0,0,800,static_cast<int>(std::min(530.,800./screenAspect)),SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);POINT pos{};ClientToScreen(game,&pos);
+    POINT pos{};ClientToScreen(game,&pos);
     const RECT placement{pos.x,pos.y,pos.x+rc.right,pos.y+rc.bottom};
     const auto order=menuOpen?menuWindow:HWND_TOPMOST;
     if(!IsWindowVisible(overlay)||overlayOrder!=order||!EqualRect(&overlayPlacement,&placement)){
@@ -190,7 +289,7 @@ inline void pump(HWND game,HWND menuWindow){
     }
     InvalidateRect(overlay,nullptr,FALSE);
 }
-inline void cleanup(){overlaySurface.clear();previewSurface.clear();for(auto& family:fonts)for(auto f:family)if(f)DeleteObject(f);for(int i=0;i<5;++i)if(glyphDC[i]){SelectObject(glyphDC[i],glyphOld[i]);DeleteObject(glyphBitmap[i]);DeleteDC(glyphDC[i]);glyphDC[i]=nullptr;}if(overlay)DestroyWindow(overlay);if(editor)DestroyWindow(editor);}
+inline void cleanup(){overlaySurface.clear();previewSurface.clear();for(auto& family:fonts)for(auto f:family)if(f)DeleteObject(f);for(int i=0;i<5;++i)if(glyphDC[i]){SelectObject(glyphDC[i],glyphOld[i]);DeleteObject(glyphBitmap[i]);DeleteDC(glyphDC[i]);glyphDC[i]=nullptr;}if(overlay)DestroyWindow(overlay);if(const auto editorWindow=editor.exchange(nullptr))DestroyWindow(editorWindow);}
 }
 
 #undef SendMessageW

@@ -12,12 +12,76 @@ inline HWND modeBox=nullptr,styleBox=nullptr,themeBox=nullptr,keyBoxes[3]{},warn
 inline unsigned menuKey=VK_F6;
 inline int buildingPage=0,currentPage=0;
 inline std::vector<std::pair<HWND,int>> pageControls;
+inline fs::path root;
+struct ControlLayout {HWND handle;int x,y,width,height;};
+inline std::vector<ControlLayout> controlLayouts;
+inline int layoutWidth=0,layoutHeight=0;
+inline LOGFONTW baseFont{};
+inline HFONT layoutFont=nullptr;
+inline int layoutFontHeight=0;
+inline bool startMaximized=false;
+inline constexpr int minimumWindowSize=560,defaultWindowSize=700;
+inline constexpr DWORD windowStyle=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME|WS_MAXIMIZEBOX|WS_CLIPCHILDREN;
+inline SIZE savedWindowSize(HWND h){
+    int width=defaultWindowSize,height=defaultWindowSize,maximized=0;
+    std::string extra;
+    std::ifstream file(root/L"menu-window.txt");
+    // Ignore incomplete/damaged preferences, including enormous allocations.
+    if(!(file>>width>>height>>maximized)||(file>>extra)||width<minimumWindowSize||height<minimumWindowSize||
+       width>8192||height>8192||(maximized!=0&&maximized!=1)){
+        width=height=defaultWindowSize;maximized=0;
+    }
+    startMaximized=maximized!=0;
+    MONITORINFO monitor{};monitor.cbSize=sizeof(monitor);
+    if(GetMonitorInfoW(MonitorFromWindow(h,MONITOR_DEFAULTTONEAREST),&monitor)){
+        width=std::min(width,static_cast<int>(monitor.rcWork.right-monitor.rcWork.left));
+        height=std::min(height,static_cast<int>(monitor.rcWork.bottom-monitor.rcWork.top));
+    }
+    return {width,height};
+}
+inline void saveWindowSize(){
+    const auto h=window.load();if(!h)return;
+    WINDOWPLACEMENT placement{};placement.length=sizeof(placement);
+    if(!GetWindowPlacement(h,&placement))return;
+    const auto& rect=placement.rcNormalPosition;
+    const auto temp=root/L"menu-window.tmp",destination=root/L"menu-window.txt";
+    std::ofstream file(temp);
+    file<<rect.right-rect.left<<' '<<rect.bottom-rect.top<<' '
+        <<(IsZoomed(h)?1:0)<<'\n';file.close();
+    if(file)MoveFileExW(temp.c_str(),destination.c_str(),MOVEFILE_REPLACE_EXISTING);
+}
+inline void resizeControls(HWND h){
+    if(layoutWidth<=0||layoutHeight<=0||controlLayouts.empty())return;
+    RECT client{};if(!GetClientRect(h,&client)||client.right<=0||client.bottom<=0)return;
+    const double scaleX=static_cast<double>(client.right)/layoutWidth;
+    const double scaleY=static_cast<double>(client.bottom)/layoutHeight;
+    const auto fontHeight=static_cast<int>(std::lround(baseFont.lfHeight*std::min(scaleX,scaleY)));
+    if(fontHeight!=layoutFontHeight){
+        auto font=baseFont;font.lfHeight=fontHeight;
+        if(const auto replacement=CreateFontIndirectW(&font)){
+            for(const auto& item:controlLayouts)SendMessageW(item.handle,WM_SETFONT,reinterpret_cast<WPARAM>(replacement),FALSE);
+            if(layoutFont)DeleteObject(layoutFont);
+            layoutFont=replacement;layoutFontHeight=fontHeight;
+        }
+    }
+    const auto scaled=[](int value,double scale){return static_cast<int>(std::lround(value*scale));};
+    constexpr UINT flags=SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_NOREDRAW;
+    auto batch=BeginDeferWindowPos(static_cast<int>(controlLayouts.size()));
+    for(const auto& item:controlLayouts){
+        if(!batch)break;
+        batch=DeferWindowPos(batch,item.handle,nullptr,scaled(item.x,scaleX),scaled(item.y,scaleY),
+            scaled(item.width,scaleX),scaled(item.height,scaleY),flags);
+    }
+    const bool moved=batch&&EndDeferWindowPos(batch);
+    if(!moved)for(const auto& item:controlLayouts)SetWindowPos(item.handle,nullptr,
+        scaled(item.x,scaleX),scaled(item.y,scaleY),scaled(item.width,scaleX),scaled(item.height,scaleY),flags);
+    RedrawWindow(h,nullptr,nullptr,RDW_INVALIDATE|RDW_ERASE|RDW_ALLCHILDREN);
+}
 inline std::vector<unsigned> keyCodes;
 inline void selectPage(int page){currentPage=page;for(const auto& item:pageControls)ShowWindow(item.first,item.second<0||item.second==page?SW_SHOW:SW_HIDE);}
 inline HWND calibrationButton=nullptr,languageBox=nullptr,profileBox=nullptr;
 inline std::atomic<bool> joystickConnected{false};
 inline HWND gameWindow=nullptr,deviceBox=nullptr,deviceStatus=nullptr,hotStart=nullptr;
-inline fs::path root;
 inline void refreshObjectLimit(){
     const auto setting=objectLimit::read(objectLimit::defaultEnginePath());
     const auto text=std::to_wstring(setting.ok&&setting.hasValue?setting.value:objectLimit::suggested);
@@ -64,13 +128,17 @@ inline std::array<DWORD,8> calibrationCenter{},calibrationLow{},calibrationHigh{
 inline std::array<bool,8> calibrationUsed{};
 struct CalibrationEntry{int axis=0;DWORD low=0,high=0,center=0;bool invert=false;};
 inline std::array<CalibrationEntry,4> calibrationEntries{};
-inline void hide(){calibrationState=0;EnableWindow(calibrationButton,TRUE);SetWindowTextW(calibrationButton,L"Калибровать оси");if(osd::editing)SendMessageW(osd::editor,WM_CLOSE,0,0);ShowWindow(window,SW_HIDE);if(IsWindow(previousWindow))SetForegroundWindow(previousWindow);}
+inline void hide(){saveWindowSize();calibrationState=0;EnableWindow(calibrationButton,TRUE);SetWindowTextW(calibrationButton,L"Калибровать оси");if(osd::editing)SendMessageW(osd::editor.load(),WM_CLOSE,0,0);ShowWindow(window,SW_HIDE);if(IsWindow(previousWindow))SetForegroundWindow(previousWindow);}
+inline void cleanup(){saveWindowSize();if(const auto h=window.exchange(nullptr))DestroyWindow(h);}
 inline const char* presets[]={"Clearly","Cloudy","Fogy","LightRainy","Rainy","Thundery","Stormy"};
 inline HWND control(const wchar_t* cls,const wchar_t* label,DWORD style,int x,int y,int w,int h,int id=0){
     if(wcscmp(cls,L"BUTTON")==0&&(style&0xf)==BS_PUSHBUTTON)style|=BS_OWNERDRAW;
     HWND child=CreateWindowExW(0,cls,language::tr(label),WS_CHILD|WS_VISIBLE|style,x,y,w,h,window,reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),GetModuleHandleW(nullptr),nullptr);
     SendMessageW(child,WM_SETFONT,reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),TRUE);
-    pageControls.push_back({child,buildingPage});return child;
+    pageControls.push_back({child,buildingPage});
+    // A combo's measured rectangle excludes its dropdown. Keep the requested
+    // height so resizing never collapses the list to a single row.
+    controlLayouts.push_back({child,x,y,w,h});return child;
 }
 inline void sendNext(){
     if(pending||commands.empty())return;
@@ -134,6 +202,22 @@ inline void finishAxisSample(){
     resetCalibration(L"Калибровка сохранена и применяется к FPV.");send("calibration 1");
 }
 inline LRESULT CALLBACK proc(HWND h,UINT message,WPARAM wp,LPARAM lp){
+    if(message==WM_GETMINMAXINFO){
+        auto info=reinterpret_cast<MINMAXINFO*>(lp);
+        MONITORINFO monitor{};monitor.cbSize=sizeof(monitor);
+        int width=minimumWindowSize,height=minimumWindowSize;
+        if(GetMonitorInfoW(MonitorFromWindow(h,MONITOR_DEFAULTTONEAREST),&monitor)){
+            width=std::min(width,static_cast<int>(monitor.rcWork.right-monitor.rcWork.left));
+            height=std::min(height,static_cast<int>(monitor.rcWork.bottom-monitor.rcWork.top));
+        }
+        info->ptMinTrackSize={width,height};return 0;
+    }
+    if(message==WM_SIZE){if(wp!=SIZE_MINIMIZED)resizeControls(h);return 0;}
+    if(message==WM_EXITSIZEMOVE){saveWindowSize();return 0;}
+    if(message==WM_NCDESTROY){
+        controlLayouts.clear();pageControls.clear();layoutWidth=layoutHeight=layoutFontHeight=0;
+        if(layoutFont){DeleteObject(layoutFont);layoutFont=nullptr;}
+    }
     if(message==WM_CTLCOLORSTATIC&&(reinterpret_cast<HWND>(lp)==warning||reinterpret_cast<HWND>(lp)==status||reinterpret_cast<HWND>(lp)==objectLimitStatus)){
         auto dc=reinterpret_cast<HDC>(wp);SetBkColor(dc,uiTheme::background());SetTextColor(dc,uiTheme::dark?RGB(255,120,120):RGB(170,20,30));return reinterpret_cast<LRESULT>(uiTheme::brush());
     }
@@ -143,9 +227,9 @@ inline LRESULT CALLBACK proc(HWND h,UINT message,WPARAM wp,LPARAM lp){
         const auto id=LOWORD(wp);
         if(id==116){const auto choice=SendMessageW(modeBox,CB_GETCURSEL,0,0);if(choice>=0&&choice<3){const char* values[]={"acro","angle","3d"};send(std::string("mode ")+values[choice]);}return 0;}
         if(id==117){const auto choice=SendMessageW(styleBox,CB_GETCURSEL,0,0);if(choice>=0&&choice<5)send("style "+std::to_string(choice));return 0;}
-        if(id==118){uiTheme::dark=SendMessageW(themeBox,CB_GETCURSEL,0,0)==0;std::ofstream f(root/L"theme.txt");f<<(uiTheme::dark?1:0);uiTheme::apply(window);if(osd::editor)uiTheme::apply(osd::editor);return 0;}
+        if(id==118){uiTheme::dark=SendMessageW(themeBox,CB_GETCURSEL,0,0)==0;std::ofstream f(root/L"theme.txt");f<<(uiTheme::dark?1:0);uiTheme::apply(window);if(const auto editorWindow=osd::editor.load())uiTheme::apply(editorWindow);return 0;}
     }
-    if(message==WM_COMMAND&&LOWORD(wp)==112&&HIWORD(wp)==CBN_SELCHANGE){if(calibrationState!=0)return 0;language::current=static_cast<int>(SendMessageW(languageBox,CB_GETCURSEL,0,0));{std::ofstream f(root/L"language.txt");f<<language::current;}if(osd::editor){DestroyWindow(osd::editor);osd::editor=nullptr;osd::editing=false;}language::relabel(window);return 0;}
+    if(message==WM_COMMAND&&LOWORD(wp)==112&&HIWORD(wp)==CBN_SELCHANGE){if(calibrationState!=0)return 0;language::current=static_cast<int>(SendMessageW(languageBox,CB_GETCURSEL,0,0));{std::ofstream f(root/L"language.txt");f<<language::current;}if(const auto editorWindow=osd::editor.exchange(nullptr)){DestroyWindow(editorWindow);osd::editing=false;}language::relabel(window);return 0;}
     if(message==WM_COMMAND&&LOWORD(wp)==113&&HIWORD(wp)==CBN_SELCHANGE){
         if(calibrationState){resetCalibration(L"Выберите настройки и нажмите кнопку.");EnableWindow(calibrationButton,TRUE);}
         const auto index=SendMessageW(deviceBox,CB_GETCURSEL,0,0);if(index!=CB_ERR){const auto id=static_cast<unsigned>(SendMessageW(deviceBox,CB_GETITEMDATA,index,0));controllers::requested=id;std::ofstream f(root/L"controller.txt");f<<id;}return 0;
@@ -225,12 +309,17 @@ inline LRESULT CALLBACK proc(HWND h,UINT message,WPARAM wp,LPARAM lp){
     }
     return DefWindowProcW(h,message,wp,lp);
 }
-inline void show(){
-    if(GetForegroundWindow()!=window)previousWindow=GetForegroundWindow();
+inline void create(){
     if(!window){
         int dark=1;{std::ifstream f(root/L"theme.txt");f>>dark;}uiTheme::dark=dark!=0;
         WNDCLASSW cls{};cls.lpfnWndProc=proc;cls.hInstance=GetModuleHandleW(nullptr);cls.lpszClassName=L"ZoneFPVWeather";cls.hCursor=LoadCursorW(nullptr,MAKEINTRESOURCEW(32512));RegisterClassW(&cls);
-        window=CreateWindowExW(WS_EX_TOPMOST,cls.lpszClassName,language::tr(L"ZoneFPV — настройки"),WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,CW_USEDEFAULT,CW_USEDEFAULT,700,700,nullptr,nullptr,cls.hInstance,nullptr);ShowWindow(window,SW_HIDE);
+        window=CreateWindowExW(WS_EX_TOPMOST,cls.lpszClassName,language::tr(L"ZoneFPV — настройки"),windowStyle,CW_USEDEFAULT,CW_USEDEFAULT,defaultWindowSize,defaultWindowSize,nullptr,nullptr,cls.hInstance,nullptr);
+        if(!window)return;
+        RECT client{};GetClientRect(window,&client);layoutWidth=client.right;layoutHeight=client.bottom;
+        GetObjectW(GetStockObject(DEFAULT_GUI_FONT),sizeof(baseFont),&baseFont);
+        // Control creation can generate size messages; the baseline is only
+        // ready once all controls have been built.
+        controlLayouts.clear();pageControls.clear();
         buildingPage=-1;
         const wchar_t* tabs[]={L"Полёт",L"Контроллер",L"Мир",L"Интерфейс",L"Прорисовка"};
         for(int i=0;i<5;++i)control(L"BUTTON",tabs[i],WS_TABSTOP,18+i*132,15,124,34,500+i);
@@ -303,8 +392,15 @@ inline void show(){
         control(L"STATIC",L"Максимум Unreal-объектов в игре: акторов, компонентов, ресурсов.\nПовышение даёт запас для подгрузки, но не ускоряет игру.\nБольше объектов может увеличить расход RAM, время загрузки и паузы GC.\nСлишком маленький лимит может вызвать краш при запуске.\nИзменение действует на всю игру после перезапуска и остаётся после FPV.",0,22,406,620,118);
         control(L"STATIC",L"Engine.ini: %LOCALAPPDATA%/Stalker2/Saved/Config/Windows",0,22,531,620,22);
         selectPage(currentPage);uiTheme::apply(window);
+        const auto dimensions=savedWindowSize(window);
+        SetWindowPos(window,nullptr,0,0,dimensions.cx,dimensions.cy,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        resizeControls(window);
     }
-    ShowWindow(window,SW_SHOW);SetForegroundWindow(window);
+}
+inline void show(){
+    if(GetForegroundWindow()!=window)previousWindow=GetForegroundWindow();
+    const bool first=!window;create();if(!window)return;
+    ShowWindow(window,first&&startMaximized?SW_SHOWMAXIMIZED:SW_SHOW);SetForegroundWindow(window);
 }
 inline bool focused(){return osd::focused()||(window&&IsWindowVisible(window)&&(GetForegroundWindow()==window||IsChild(window,GetForegroundWindow())));}
 inline void pump(bool gameFocus){
@@ -313,7 +409,7 @@ inline void pump(bool gameFocus){
     if(window&&IsWindowVisible(window)&&GetTickCount64()>=nextDeviceRefresh){nextDeviceRefresh=GetTickCount64()+1000;refreshDevices();
         unsigned value=0;std::ifstream f(root/L"bindings.txt");if(f>>value&&value!=menuKey&&value>0&&value<256){if(hotkeyRegistered){UnregisterHotKey(nullptr,6006);hotkeyRegistered=false;}menuKey=value;}}
     const bool eligible=gameFocus||focused();
-    osd::pump(eligible?gameWindow:nullptr,focused()?(osd::focused()?osd::editor:window.load()):nullptr);
+    osd::pump(eligible?gameWindow:nullptr,focused()?(osd::focused()?osd::editor.load():window.load()):nullptr);
     if(focused())ClipCursor(nullptr);
     if(eligible&&!hotkeyRegistered)hotkeyRegistered=RegisterHotKey(nullptr,6006,MOD_NOREPEAT,menuKey)!=0;
     if(!eligible&&hotkeyRegistered){UnregisterHotKey(nullptr,6006);hotkeyRegistered=false;}
@@ -322,7 +418,7 @@ inline void pump(bool gameFocus){
             // A queued hotkey must not reopen/activate our menu after Alt+Tab.
             if(eligible){if(window&&IsWindowVisible(window))hide();else show();}continue;
         }
-        HWND dialog=osd::focused()?osd::editor:window.load();
+        HWND dialog=osd::focused()?osd::editor.load():window.load();
         if(!dialog||!IsDialogMessageW(dialog,&message)){TranslateMessage(&message);DispatchMessageW(&message);}
     }
     if(calibrationState!=0&&!joystickConnected){resetCalibration(L"Контроллер не подключён.");EnableWindow(calibrationButton,TRUE);}

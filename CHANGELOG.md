@@ -1,3 +1,21 @@
+# 0.2.0 — 2026-10-03
+
+Stable release, following the user's final in-game verification.
+
+Changes since RC4:
+
+- Preserve rain, falling leaves and crows when entering FPV. Recover supported particle sources after the game retires or reuses their components, using bounded rediscovery instead of continuous world scans.
+- Make the F6 menu and OSD settings window resizable and maximizable. Scale their controls/fonts and save window dimensions; preserve the OSD preview's game aspect ratio and existing element positions.
+- Restore the game HUD immediately after leaving FPV, without requiring an Esc/settings round trip. Restore each saved widget independently and remove global hide/show commands that could leave the HUD hidden.
+- Reduce repeated camera/presentation/particle work and keep the accepted rendering behavior. Physics remains at 240 Hz; all collision queries are retained.
+- Improve restoration after partial failures, controller/OSD window thread synchronization and analog-style saving.
+- Preserve UTF-8 mod names in the Windows PowerShell 5.1 installer and roll back failed installation/update operations, including the original mod list and previous ZoneFPV files.
+- Remove obsolete diagnostic artifacts from the distribution and automatically discover all Lua test suites.
+
+This stable release also includes the RC4 changes below: default main FPV with an explained alternative mode, stronger collision, player/exposure/subtitle state restoration, player detection isolation, weather/freeze/focus fixes, uniform geometry loading up to 5×, optional manual object-limit configuration and the DualShock 4 DirectInput profile.
+
+Known limitations: the CNPP black anomaly effect remains unresolved; checkpoint quest fog is unchanged. Some geometry or collision may still be unavailable while streaming. Higher loading multipliers and object limits can increase RAM use and reduce performance. Physical DS4 testing and actual startup object-capacity verification are pending; no numerical FPS improvement is claimed.
+
 # 0.2.0 RC4 — 2026-10-02
 
 Changes relative to RC3:

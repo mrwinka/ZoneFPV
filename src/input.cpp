@@ -154,7 +154,7 @@ int wmain(int argc,wchar_t** argv){
     {std::ifstream f(root/L"language.txt");int lang=0;if(f>>lang&&lang>=0&&lang<=4)language::current=lang;}
     {std::ifstream prefs(root/L"audio-volume.txt");float volume=0.5f;if(prefs>>volume && std::isfinite(volume) && volume>=0 && volume<=1)droneAudio::volume=volume;}
     std::atomic<bool> menuStop{false};
-    std::thread menuThread([&](){if(settings)weatherMenu::show();while(!menuStop){weatherMenu::pump(gameFocused());Sleep(16);}osd::cleanup();});
+    std::thread menuThread([&](){if(settings)weatherMenu::show();while(!menuStop){weatherMenu::pump(gameFocused());Sleep(16);}weatherMenu::cleanup();osd::cleanup();});
     std::thread audioThread([&](){droneAudio::run(root,menuStop);});
     std::cout<<"ZoneFPV input bridge running. Close this window / Ctrl+C to stop.\n";
     // Enumeration can block in a USB driver. Keep publishing input and servicing

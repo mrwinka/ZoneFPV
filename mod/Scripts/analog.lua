@@ -19,7 +19,12 @@ end
 function M.save_style(root,style)
     if type(style)~='number' or style%1~=0 or style<0 or style>4 then return false end
     local f=io.open(root..'analog-style.txt','w');if not f then return false end
-    local ok=f:write(tostring(style)..'\n');local closed=f:close();return ok and closed and M.save(root,style>0) or false
+    local ok=f:write(tostring(style)..'\n');local closed=f:close()
+    if not ok or not closed then return false end
+    -- The style file is authoritative on load. Keep the legacy boolean in sync
+    -- when possible, but do not report a failed command after its style committed.
+    M.save(root,style>0)
+    return true
 end
 function M.apply(camera,enabled,style)
     -- Leave the effect disabled if any unsupported property raises an error.

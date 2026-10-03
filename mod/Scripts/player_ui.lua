@@ -7,7 +7,8 @@ local function same(a,b)
     return ok and value
 end
 local function restoreWidget(entry)
-    pcall(function() if valid(entry.object) then entry.object:SetRenderOpacity(entry.opacity);entry.object:SetVisibility(entry.visibility) end end)
+    pcall(function() if valid(entry.object) then entry.object:SetRenderOpacity(entry.opacity) end end)
+    pcall(function() if valid(entry.object) then entry.object:SetVisibility(entry.visibility) end end)
 end
 local function attempt(g,key,fn)
     if g.unsupported[key] then return end
@@ -33,13 +34,17 @@ function M.update(s,now,gameplay,menu)
     end
     if now>=g.nextScan then
         g.nextScan=now+0.5
-        attempt(g,'subtitle widgets',function()
+        attempt(g,'UI widgets',function()
             for id,entry in pairs(g.widgets) do
                 local w=entry.object
                 if not valid(w) then g.widgets[id]=nil
                 elseif not same(w:GetWorld(),g.world) then restoreWidget(entry);g.widgets[id]=nil end
             end
             local candidates=FindAllOf('SubtitleView') or {}
+            -- Hide the native HUD root, preserving every child's own settings.
+            -- Global XHideAllWidget/XShowAllWidget commands are not inverses of
+            -- the game's view-manager state and can leave the HUD hidden.
+            for _,w in ipairs(FindAllOf('PlayerGameHUDView') or {}) do candidates[#candidates+1]=w end
             if now>=(g.nextWideScan or 0) then
                 g.nextWideScan=now+2
                 for _,w in ipairs(FindAllOf('UserWidget') or {}) do
@@ -53,11 +58,13 @@ function M.update(s,now,gameplay,menu)
                     if not seen[id] then
                         seen[id]=true
                         if not g.widgets[id] then
-                            local world=w:GetWorld()
-                            if valid(world) and world:GetAddress()==g.worldId then
-                                local key='widget '..tostring(id);g.unsupported[key]=nil
-                                g.widgets[id]={object=w,key=key,opacity=w:GetRenderOpacity(),visibility=w:GetVisibility()}
-                            end
+                            attempt(g,'snapshot '..tostring(id),function()
+                                local world=w:GetWorld()
+                                if valid(world) and world:GetAddress()==g.worldId then
+                                    local key='widget '..tostring(id);g.unsupported[key]=nil
+                                    g.widgets[id]={object=w,key=key,opacity=w:GetRenderOpacity(),visibility=w:GetVisibility()}
+                                end
+                            end)
                         end
                     end
                 end

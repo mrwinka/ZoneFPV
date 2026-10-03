@@ -8,7 +8,7 @@ ZoneFPV's installer copies only its own mod. UE4SS, proxy DLLs, engine signature
 
 ## Game-thread compatibility
 
-RC3 and RC4 use the one-argument `ExecuteInGameThread(callback)` API and respect UE4SS's configured default, including **EngineTick**. They do not force ProcessEvent, change hooks on dispatch failure or edit UE4SS settings.
+ZoneFPV 0.2.0 (and RC3/RC4) uses the one-argument `ExecuteInGameThread(callback)` API and respects UE4SS's configured default, including **EngineTick**. It does not force ProcessEvent, change hooks on dispatch failure or edit UE4SS settings.
 
 The original RC2 explicitly requested ProcessEvent. A reporter's game 2.0.6 / UE4SS `527a483b` setup with [compatibility package 2810](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2810) required EngineTick. The reporter subsequently confirmed RC3 worked without the reported freezes. Keep the settings required by the runtime for your exact game version; do not change them to ProcessEvent as a ZoneFPV workaround.
 
@@ -28,5 +28,5 @@ Borderless/windowed play is recommended for the native OSD. The bridge uses back
 
 ## Ограничения совместимости
 
-Нужен UE4SS именно для вашей версии игры. RC3/RC4 соблюдают выбранный в нём метод игрового потока, включая EngineTick; настройки UE4SS не меняются. Старый патч 2341 подходит только для версий игры, перечисленных на его странице. Готовые профили контроллеров требуют проверки направлений; настоящий DS4 ещё не проверен.
+Нужен UE4SS именно для вашей версии игры. ZoneFPV 0.2.0 (как и RC3/RC4) соблюдает выбранный в нём метод игрового потока, включая EngineTick; настройки UE4SS не меняются. Старый патч 2341 подходит только для версий игры, перечисленных на его странице. Готовые профили контроллеров требуют проверки направлений; настоящий DS4 ещё не проверен.
 

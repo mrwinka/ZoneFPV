@@ -21,7 +21,7 @@ For an optional higher object limit, use F6 → Rendering → `gc.MaxObjectsInGa
 - **F6/F8 do nothing:** confirm a save is loaded and ZoneFPV is enabled in `ue4ss/Mods/mods.txt`; check `UE4SS.log`, `Mods/ZoneFPV/input-bridge-error.log` and `bridge-start-error.log`. A helper menu alone does not prove the Lua mod loaded.
 - **Wrong axes or no device:** select the physical/virtual interface you use, check directions and calibrate. Custom transmitter models can use different channel orders. A physical Sony controller and a virtual Xbox controller may appear separately.
 - **FPV will not enter:** check throttle neutral for the selected flight mode and that controller data is current.
-- **Black CNPP view or quest fog:** these regional effects remain a known limitation, not a confirmed RC4 fix.
+- **Black CNPP view or quest fog:** these regional effects remain a known limitation in 0.2.0.
 - **Clipping or missing distant geometry:** try main FPV, allow streaming time and use a suitable loading distance. Unloaded collision cannot be guaranteed by this mod.
 - **Lost custom menu key:** close the game and remove only `bindings.txt` from the installed mod to restore F6/F8/F9.
 
