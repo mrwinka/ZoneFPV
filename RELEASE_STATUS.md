@@ -1,14 +1,14 @@
-# ZoneFPV 0.3.0 RC1 debug v58 — validation status
+# ZoneFPV 0.3.0 RC1 — validation status
 
-This is an experimental prerelease based on stable 0.2.0. **`gameplay_verified=false`** for the latest v58 changes. Offline checks pass; live NPC model preservation and scanner recovery remain open.
+This is an experimental prerelease based on stable 0.2.0. **`gameplay_verified=false`** for the latest changes. Offline checks pass; live NPC model preservation and scanner recovery remain open.
 
 ## Current evidence
 
-- All 66 Lua test suites passed after the v58 corrections.
+- All 66 Lua test suites passed after the latest corrections.
 - Syntax checks passed for 139 Lua source/test files.
 - Installed runtime files were compared with source hashes; the installation preserves existing preferences.
 - Regression tests reproduce delayed NPC readiness and changed ownership within an equipment attachment chain, and verify the bounded corrections.
-- Existing v55 input/overlay helper and v51 native DLL are reused; v58 does not include a new binary build.
+- Existing v55 input/overlay helper and v51 native DLL are reused; This release does not include a new binary build.
 
 The scanner tests cover late model/world/root readiness, queue and time bounds, current-camera projection, simultaneous visible NPCs, stale/invalid identities and complete protocol packets. Visibility tests cover 23 scenarios including ancestor transfer, identity/world changes, repeated updates, exit and discovery order.
 
@@ -20,8 +20,8 @@ Check simultaneous NPC/mutant scanning in ordinary and thermal vision, moving/ro
 
 ## Publication
 
-GitHub source and the prerelease [v0.3.0-rc1-v58](https://github.com/mrwinka/ZoneFPV/releases/tag/v0.3.0-rc1-v58) were published on 2026-10-08. The tag points to f9fc1eca4f83fbc37d3f8b4fc97575fbaedfd0e7. All 267 source-tree file hashes were checked; all three attached assets were downloaded again and matched the prepared package. Stable 0.2.0 remains Latest and previous downloads are preserved.
+The prepared public release is named **0.3.0 RC1**. Its attached installer is **ZoneFPV-0.3.0-RC1.zip** (126 files, 109 runtime files); SHA-256: 36d620a5c317650378862f66d97f697dabd048e3054d2a784e8907a5c67f2afb.
 
-The public installer has 126 entries including 109 unchanged verified runtime files and the mod's own armament PAK. Its SHA-256 is e1085ce4d23318a6b9d5daa13ec16987201cda9795e43cedc7910c1d65e79929. It also passed isolated mock installation/update/uninstall checks. Local logs, private preferences and installation receipts are excluded.
+The source/package update changes one runtime log label and public documentation/file names. The 108 other runtime files, native/helper binaries and Armament PAK are byte-identical to the reviewed build. Existing tests cover the unchanged runtime behavior; the log-only substitution is checked separately. The installer is tested in an isolated install/update/uninstall fixture.
 
-Nexus publication is still pending: the available browser requires login. The matching archive, bilingual description and file notes are prepared. No Nexus upload, description change or clearance is claimed. This publication status does not change gameplay_verified=false.
+Publication and post-download checks must be recorded after GitHub/Nexus upload. Stable 0.2.0 remains separate. This naming change does not change **gameplay_verified=false**.

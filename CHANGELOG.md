@@ -1,8 +1,8 @@
-## RC1 debug v58 — 2026-10-08
+## 0.3.0 RC1 — 2026-10-08
 
 - Retain bounded deferred discovery for still-live NPCs whose meshes load after the initial retry window; preserve native-read and discovery budgets.
 - Require unchanged identity and ownership throughout a captured equipment attachment chain before any visibility or restoration write.
-- Add regression coverage for late mesh readiness and transferred intermediate equipment. No live gameplay correction is claimed; see DEBUG_V58_REPORT_RU.md.
+- Add regression coverage for late mesh readiness and transferred intermediate equipment. No live gameplay correction is claimed; see RELEASE_STATUS.md.
 
 ## RC1 debug v57 — 2026-10-08
 

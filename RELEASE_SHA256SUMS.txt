@@ -1,2 +1,2 @@
-e1085ce4d23318a6b9d5daa13ec16987201cda9795e43cedc7910c1d65e79929  ZoneFPV-0.3.0-RC1-v58.zip
-eca4a4fb68fe5d81b59ee29068db4d8d8cf47449f82bfdc5cc18d5c499a0be2e  ZoneFPV-0.3.0-RC1-v58-verification.json
+36d620a5c317650378862f66d97f697dabd048e3054d2a784e8907a5c67f2afb  ZoneFPV-0.3.0-RC1.zip
+f3207bd5a81070ed6bd1ad8a09bc427cd09c5ed9db3d42201fdc61b2178a8342  ZoneFPV-0.3.0-RC1-verification.json

@@ -2,11 +2,11 @@
 
 A transmitter/gamepad-controlled FPV drone camera for S.T.A.L.K.E.R. 2, with quadcopter-style flight, configurable OSD and camera effects.
 
-**Stable release: 0.2.0. Latest experimental prerelease: 0.3.0 RC1 debug v58.** Choose the corresponding attached installer ZIP in [Releases](https://github.com/mrwinka/ZoneFPV/releases). The automatic Source code archive is for development and does not contain a ready-to-use runtime.
+**Stable release: 0.2.0. Latest experimental prerelease: 0.3.0 RC1.** Choose the corresponding attached installer ZIP in [Releases](https://github.com/mrwinka/ZoneFPV/releases). The automatic Source code archive is for development and does not contain a ready-to-use runtime.
 
 [Русская инструкция](README_RU.md) · [Install and troubleshoot](SITE_INSTALL.md) · [Release notes](RELEASE_NOTES.md) · [Validation status](RELEASE_STATUS.md) · [Nexus Mods](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
 
-The latest v58 NPC/scanner corrections passed offline checks. **`gameplay_verified=false`: NPC disappearance and scanner recovery remain unverified in a live game.** This is a prerelease, not a replacement claim for author-tested stable 0.2.0.
+The latest NPC/scanner corrections passed offline checks. **`gameplay_verified=false`: NPC disappearance and scanner recovery remain unverified in a live game.** This is a prerelease, not a replacement claim for author-tested stable 0.2.0.
 
 ## Features
 
@@ -31,7 +31,7 @@ Install a game-compatible UE4SS runtime separately. Close the game, extract the 
 
 ## Latest corrections and limits
 
-v58 retains bounded retries for living NPCs whose model/world/root becomes ready late and validates ownership/identity across the full player-equipment attachment chain. Transferred descendants stop receiving visibility writes. Original movement-component ticking and read-only residency diagnostics remain from v57.
+This release retains bounded retries for living NPCs whose model/world/root becomes ready late and validates ownership/identity across the full player-equipment attachment chain. Transferred descendants stop receiving visibility writes. Original movement-component ticking and read-only residency diagnostics remain from v57.
 
 All **66 Lua suites** passed and **139 Lua files** parsed; installed runtime files were hash-verified. Existing v55 helper/v51 native DLL are reused without a new binary build. These checks do not establish live model recovery, absence of all crashes or measured FPS gains. [Review evidence](REVIEW_NOTES.md).
 

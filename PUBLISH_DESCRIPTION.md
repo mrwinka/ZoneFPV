@@ -2,7 +2,7 @@
 
 ZoneFPV adds a transmitter/gamepad-controlled FPV camera to S.T.A.L.K.E.R. 2, with a quadcopter flight model, configurable OSD and camera effects.
 
-**0.2.0 remains the author-tested stable release. 0.3.0 RC1 debug v58 is an experimental prerelease.** The latest NPC/scanner corrections were tested offline; full gameplay validation remains pending (`gameplay_verified=false`).
+**0.2.0 remains the author-tested stable release. 0.3.0 RC1 is an experimental prerelease.** The latest NPC/scanner corrections were tested offline; full gameplay validation remains pending (`gameplay_verified=false`).
 
 ## Features
 
@@ -21,7 +21,7 @@ ZoneFPV adds a transmitter/gamepad-controlled FPV camera to S.T.A.L.K.E.R. 2, wi
 
 Scanner brackets project through the current FPV camera on each camera frame. Complete alternating packets and freshness checks reject partial/old output. Visible targets receive the output budget; offscreen targets no longer consume all marker slots.
 
-v58 retains bounded retries for living NPCs whose model/world/root loads late. Equipment visibility changes and restoration require unchanged identity and ownership throughout every attachment ancestor; transferred descendants stop receiving writes. The original player movement-component tick state and read-only residency diagnostics from v57 remain.
+This release retains bounded retries for living NPCs whose model/world/root loads late. Equipment visibility changes and restoration require unchanged identity and ownership throughout every attachment ancestor; transferred descendants stop receiving writes. The original player movement-component tick state and read-only residency diagnostics from v57 remain.
 
 66 Lua suites and syntax checks for 139 Lua files passed; installed runtime files were hash-verified. Existing v55 helper/v51 native binaries are reused without a new binary build. **NPC disappearance and scanner recovery in a live game are not claimed fixed or fully verified.** No measured FPS increase is claimed.
 
@@ -47,7 +47,7 @@ ZoneFPV code is MIT. The included Betaflight OSD font is separately GPL-3.0-or-l
 
 ZoneFPV добавляет управляемую пультом/геймпадом FPV-камеру с моделью полёта квадрокоптера, настраиваемым OSD и эффектами видения.
 
-**0.2.0 остаётся стабильным выпуском, проверенным автором. 0.3.0 RC1 debug v58 — экспериментальный предварительный выпуск.** Последние исправления NPC/сканера проверены вне игры; полное игровое подтверждение остаётся открытым (`gameplay_verified=false`).
+**0.2.0 остаётся стабильным выпуском, проверенным автором. 0.3.0 RC1 — экспериментальный предварительный выпуск.** Последние исправления NPC/сканера проверены вне игры; полное игровое подтверждение остаётся открытым (`gameplay_verified=false`).
 
 - Acro, самовыравнивание Angle и двунаправленная тяга 3D; скорость, rates, expo и наклон камеры.
 - Выбор DirectInput/XInput/WinMM, профили и мастер калибровки четырёх осей. Проверка настоящего DS4 ещё не выполнена.
@@ -60,7 +60,7 @@ ZoneFPV добавляет управляемую пультом/геймпад�
 - Основной FPV переносит центр симуляции вслед за дроном; альтернативный оставляет его на старте. Сохраняются столкновения объёмом, управление временем/погодой, заморозка мира и настройки подгрузки.
 - Пять языков, звук дрона, очистка поддерживаемых эффектов и возврат состояния игрока. Совместимость с достижениями сохранена.
 
-Рамки сканера используют текущую камеру и отбрасывают неполные/устаревшие пакеты. В v58 сохраняется ограниченное ожидание поздней готовности NPC, а проверка видимости учитывает личность/владельца всей цепочки снаряжения. После передачи родителя NPC записи в дочерние объекты прекращаются. Исходное обновление компонента движения игрока и диагностика v57 сохранены.
+Рамки сканера используют текущую камеру и отбрасывают неполные/устаревшие пакеты. В этом выпуске сохраняется ограниченное ожидание поздней готовности NPC, а проверка видимости учитывает личность/владельца всей цепочки снаряжения. После передачи родителя NPC записи в дочерние объекты прекращаются. Исходное обновление компонента движения игрока и диагностика v57 сохранены.
 
 Все 66 Lua-наборов и синтаксис 139 файлов прошли; установка сверена по хешам. **Исчезновение моделей NPC и восстановление сканера в живой игре ещё не подтверждены.** Численный прирост FPS не заявляется.
 

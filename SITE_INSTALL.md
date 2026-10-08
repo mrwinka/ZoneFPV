@@ -1,6 +1,6 @@
 # ZoneFPV installation and troubleshooting / Установка и устранение неполадок
 
-**Current experimental prerelease: 0.3.0 RC1 debug v58.** Latest NPC/scanner fixes have offline verification only (`gameplay_verified=false`). Stable 0.2.0 remains separate.
+**Current experimental prerelease: 0.3.0 RC1.** Latest NPC/scanner fixes have offline verification only (`gameplay_verified=false`). Stable 0.2.0 remains separate.
 
 ## English
 
@@ -38,7 +38,7 @@ For a report, include ZoneFPV/game/UE4SS versions, device/interface, flight/FPV/
 
 ## Русский
 
-**Текущий экспериментальный выпуск — 0.3.0 RC1 debug v58.** Последние исправления NPC/сканера проверены вне игры (`gameplay_verified=false`). Стабильная 0.2.0 остаётся отдельным выпуском.
+**Текущий экспериментальный выпуск — 0.3.0 RC1.** Последние исправления NPC/сканера проверены вне игры (`gameplay_verified=false`). Стабильная 0.2.0 остаётся отдельным выпуском.
 
 1. Отдельно установите UE4SS для точной версии игры. [Требования](DEPENDENCIES.md), [выпуски UE4SS](https://github.com/UE4SS-RE/RE-UE4SS/releases). Сохраните нужные ему настройки; не переключайте выполнение на небезопасный ProcessEvent как обход ошибки.
 2. Скачайте полный установочный ZIP с [Nexus](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) или [GitHub](https://github.com/mrwinka/ZoneFPV/releases). На GitHub нужен приложенный установочный ZIP, а не автоматический Source code.

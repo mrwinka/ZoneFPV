@@ -1,4 +1,4 @@
-# ZoneFPV 0.3.0 RC1 debug v58
+# ZoneFPV 0.3.0 RC1
 
 Experimental prerelease based on 0.2.0. This release includes the accumulated 0.3.0 work and the latest offline scanner/visibility corrections. Full gameplay verification remains pending.
 
@@ -12,7 +12,7 @@ Experimental prerelease based on 0.2.0. This release includes the accumulated 0.
 - Added artifact collection with configurable reach, simulated signal loss and world/anomaly scanning. Scanner projection follows the current FPV camera each frame, with complete alternating packets and stale/invalid-target rejection.
 - Improved controller hotplug handling, input/focus restoration, effect cleanup and bounded runtime work. Achievement compatibility is retained.
 
-## Latest v58 corrections
+## Latest corrections
 
 - Retain bounded retries for living NPCs whose mesh, world or root becomes ready after the initial discovery window.
 - Validate identity and ownership through the entire equipment attachment chain before changing/restoring visibility. Stop writing to descendants when an ancestor changes owner or identity.
@@ -39,7 +39,7 @@ Close the game, extract the complete attached ZIP and run **Setup.cmd**. Compati
 - Камикадзе, сброс гранат и совмещённый режим; мощность/порог удара, RGD-5/F-1 и 1–20 либо неограниченное количество зарядов. Добавлены сбор артефактов с регулируемой дистанцией, симуляция сигнала и сканирование мира.
 - Рамки сканера рассчитываются по текущей камере; устаревшие/некорректные цели и неполные пакеты отбрасываются. Улучшены подключение пульта, возврат управления/фокуса и очистка эффектов. Совместимость с достижениями сохранена.
 
-В v58 сканер продолжает ограниченно ждать позднюю загрузку NPC. Проверка видимости учитывает владельца и личность каждого звена снаряжения; после передачи родителя NPC записи в дочерние объекты прекращаются. Исходное обновление компонента движения игрока и диагностика v57 сохранены.
+В этом выпуске сканер продолжает ограниченно ждать позднюю загрузку NPC. Проверка видимости учитывает владельца и личность каждого звена снаряжения; после передачи родителя NPC записи в дочерние объекты прекращаются. Исходное обновление компонента движения игрока и диагностика v57 сохранены.
 
 Все 66 Lua-наборов и проверка синтаксиса 139 файлов прошли; установленная сборка сверена по хешам. **`gameplay_verified=false`: исчезновение моделей NPC и восстановление сканера в самой игре ещё не подтверждены.** Численный прирост FPS не заявляется.
 

@@ -683,7 +683,7 @@ local function enter(p)
     s.lastWorldTime=gameplay:GetTimeSeconds(pc);s.lastRealTime=clock()
     lastToggle=clock()
     log('FPV active. Use the assigned pilot action to return and reset action to return the drone to launch. Controller calibration '..(calibration and 'loaded' or 'DEFAULT AETR'))
-    log('ZoneFPV debug v58: native movement tick retained; equipment ancestor ownership and delayed NPC readiness guarded.')
+    log('ZoneFPV 0.3.0 RC1: native movement tick retained; equipment ancestor ownership and delayed NPC readiness guarded.')
 end
 local function collide(s,old)
     if not session or session.pendingDetonation then return false end
