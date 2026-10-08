@@ -1,4 +1,8 @@
 local ui=dofile('mod/Scripts/player_ui.lua')
+local wideScans,nameCalls,subtitleScans,hudScans=0,0,0,0
+local function forbiddenName()
+    nameCalls=nameCalls+1;error('live UObject name conversion forbidden')
+end
 local world={IsValid=function()return true end,GetAddress=function()return 9 end}
 local widget={opacity=.6,visibility=0}
 function widget:GetVisibility()return self.visibility end
@@ -8,6 +12,7 @@ function widget:GetWorld()return self.world or world end
 function widget:GetAddress()return 10 end
 function widget:GetRenderOpacity()return self.opacity end
 function widget:SetRenderOpacity(v)self.opacity=v end
+widget.GetFullName=forbiddenName
 local function makeHud(id,opacity,visibility,ownerWorld)
     local hud={opacity=opacity,visibility=visibility,world=ownerWorld or world,sets=0,
         children={compass={visibility=2,opacity=.3},crosshair={visibility=0,opacity=.8}}}
@@ -18,14 +23,15 @@ local function makeHud(id,opacity,visibility,ownerWorld)
     function hud:GetAddress()return id end
     function hud:GetRenderOpacity()return self.opacity end
     function hud:SetRenderOpacity(v)self.sets=self.sets+1;self.opacity=v end
+    hud.GetFullName=forbiddenName
     return hud
 end
 local hud=makeHud(20,.45,4)
 local hudRoots={hud}
 FindAllOf=function(name)
-    if name=='SubtitleView' then return {widget} end
-    if name=='PlayerGameHUDView' then return hudRoots end
-    return {}
+    if name=='SubtitleView' then subtitleScans=subtitleScans+1;return {widget} end
+    if name=='PlayerGameHUDView' then hudScans=hudScans+1;return hudRoots end
+    wideScans=wideScans+1;error('broad UI lookup forbidden: '..name)
 end
 local game={subtitles=true}
 function game:AreSubtitlesEnabled()return self.subtitles end
@@ -133,3 +139,63 @@ assert(unsupportedHud.sets==0 and widget.opacity==.6 and widget.visibility==0 an
 assert(supportedAfterError.opacity==.5 and supportedAfterError.visibility==3
     and laterHud.opacity==.4 and laterHud.visibility==0,'supported roots captured around API failures must restore')
 print('PASS native HUD API and restoration errors remain isolated from supported UI')
+
+-- Repeated scans across the former two-second fallback interval must rely on
+-- native classes and subtitle preferences, never an arbitrary widget's name.
+hud=makeHud(30,.42,4);hudRoots={hud}
+widget.opacity=.6;widget.visibility=0;s.pc.bShowMouseCursor=true;game.subtitles=true
+for _,now in ipairs({10,12,14})do
+    ui.update(s,now,game,false)
+    assert(widget.opacity==0 and widget.visibility==1 and not game.subtitles)
+    assert(hud.opacity==0 and hud.visibility==1)
+    assert(wideScans==0 and nameCalls==0,'known native UI must hide without UserWidget lookup or object names')
+end
+ui.restore(s,game)
+assert(widget.opacity==.6 and widget.visibility==0 and hud.opacity==.42 and hud.visibility==4)
+assert(game.subtitles and s.pc.bShowMouseCursor and not s.playerUI)
+assert(subtitleScans>3 and hudScans==subtitleScans and wideScans==0 and nameCalls==0)
+print('PASS known subtitles and HUD hide/restore across repeated scans without broad lookup or native name conversion')
+local notifications={}
+NotifyOnNewObject=function(path,callback)assert(not notifications[path]);notifications[path]=callback end
+hudRoots={hud};widget.invalid=false;widget.world=nil
+ui.update(s,100,game,false)
+local scanCount=subtitleScans+hudScans
+for i=1,100 do ui.update(s,100+i*.1,game,false)end
+assert(subtitleScans+hudScans==scanCount,'construction support removes periodic global UI searches')
+local fresh=makeHud(300,.55,0)
+notifications['/Script/Stalker2.PlayerGameHUDView'](fresh)
+assert(fresh.opacity==.55,'construction callback never reads or modifies a widget')
+ui.update(s,111,game,false)
+assert(fresh.opacity==0 and fresh.visibility==1)
+ui.restore(s,game)
+assert(fresh.opacity==.55 and fresh.visibility==0)
+notifications['/Script/Stalker2.PlayerGameHUDView']({IsValid=function()error('expired notification must stay inert')end})
+ui.update(s,112,game,false);ui.restore(s,game)
+ui.update(s,113,game,false)
+local initializing=makeHud(301,.65,4)
+local ready=false
+function initializing:GetWorld()return ready and world or nil end
+notifications['/Script/Stalker2.PlayerGameHUDView'](initializing)
+local retryScans=subtitleScans+hudScans
+ui.update(s,113.01,game,false)
+assert(initializing.opacity==.65 and initializing.visibility==4,'initializing HUD must stay untouched until its world exists')
+ready=true;ui.update(s,113.05,game,false)
+assert(initializing.opacity==.65,'initialization retries must wait instead of reading native state every frame')
+ui.update(s,113.12,game,false)
+assert(initializing.opacity==0 and initializing.visibility==1,'streamed HUD must be captured once construction publishes its world')
+local expired=makeHud(303,.5,0)
+notifications['/Script/Stalker2.PlayerGameHUDView'](expired)
+ui.update(s,113.13,game,false)
+expired.IsValid=function()error('expired native wrapper')end
+assert(pcall(ui.update,s,113.14,game,false),'expired native validity errors must not escape the UI update')
+local unfinished=makeHud(302,.7,0)
+local worldReads=0
+function unfinished:GetWorld()worldReads=worldReads+1;return nil end
+notifications['/Script/Stalker2.PlayerGameHUDView'](unfinished)
+for n=1,100 do ui.update(s,113.2+n*.2,game,false)end
+assert(worldReads<=11 and #s.playerUI.pending==0,'unfinished construction retries must expire within a bounded budget')
+assert(subtitleScans+hudScans==retryScans,'construction retries must not restart global UI searches')
+ui.restore(s,game)
+assert(initializing.opacity==.65 and initializing.visibility==4,'delayed construction must preserve the original HUD snapshot')
+NotifyOnNewObject=nil
+print('PASS streamed HUD notifications, exact restoration and one initial lookup per supported flight')

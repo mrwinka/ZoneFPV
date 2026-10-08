@@ -7,35 +7,41 @@ for i=1,3 do
     allowed['/Game/_Stalker_2/VFX/Environment/Leaves/'..name..'.'..name]='leaves'
 end
 allowed['/Game/_Stalker_2/VFX/Player/NS_Character_Crow.NS_Character_Crow']='crows'
+local function invoke(o,k,...)
+    return o[k](o,...)
+end
 local function call(o,k,...)
-    local args={...};local ok,v=pcall(function()return o[k](o,table.unpack(args))end)
-    if ok then return v end;return nil
+    local ok,v=pcall(invoke,o,k,...)
+    if ok then return v end
+    return nil
 end
 local function valid(o)return call(o,'IsValid')==true end
-local function same(a,b)return valid(a) and valid(b) and a:GetAddress()==b:GetAddress() end
-local function path(asset)
-    local full=valid(asset) and call(asset,'GetFullName')
-    local value=type(full)=='string' and full:match('(/Game/[^%s]+)')
-    return value and value:gsub(':','.')
+local function address(o)return valid(o) and call(o,'GetAddress') or nil end
+local function same(a,b)
+    local id=address(a);return id~=nil and id==address(b)
+end
+local function assets()
+    local found={}
+    for path in pairs(allowed) do
+        local ok,object=pcall(StaticFindObject,path)
+        local id=ok and address(object)
+        if id then found[id]={object=object,path=path} end
+    end
+    return found
+end
+local function path(known,asset)
+    local id=address(asset);local entry=id and known[id]
+    return entry and same(entry.object,asset) and entry.path or nil
 end
 local function current(s,e)
     return valid(e.object) and same(call(e.object,'GetWorld'),s.world)
         and same(call(e.object,'GetOwner'),e.owner) and same(call(e.object,'GetAsset'),e.asset)
 end
-local function lodSignature()
-    -- The current public API has an extra parameter on newer engines. Validate
-    -- this game's two-parameter UFunction before ever calling its native setter.
+local function lodAvailable()
+    -- Check only the fixed UFunction. UE4SS rejects a wrong argument count
+    -- before ProcessEvent; enumerating its FFields for their names is unsafe.
     local ok,fn=pcall(StaticFindObject,'/Script/Niagara.NiagaraComponent:SetPreviewLODDistance')
-    if not ok or not valid(fn) then return false end
-    local fields={}
-    ok=pcall(function()fn:ForEachProperty(function(p)
-        fields[#fields+1]=call(p,'GetFullName') or ''
-        if #fields>3 then return true end
-    end)end)
-    return ok and #fields==2 and fields[1]:find('BoolProperty',1,true)~=nil
-        and fields[1]:match('[:%.]bEnablePreviewLODDistance$')~=nil
-        and fields[2]:find('FloatProperty',1,true)~=nil
-        and fields[2]:match('[:%.]PreviewLODDistance$')~=nil
+    return ok and valid(fn)
 end
 local function lodDistance(e,position)
     if e.previewUnsupported then return end
@@ -45,9 +51,22 @@ local function lodDistance(e,position)
     local distance=math.sqrt((p.X-position.x*100)^2+(p.Y-position.y*100)^2+(p.Z-position.z*100)^2)
     if distance~=distance or distance==math.huge then return end
     if not e.previewApplied or math.abs(distance-e.previewApplied)>=50 then
+        if not valid(e.object) then return end
         e.previewOwned=true
         local ok=pcall(function()e.object:SetPreviewLODDistance(true,distance)end)
-        if ok then e.previewApplied=distance else e.previewUnsupported=true end
+        local enabled=ok and call(e.object,'GetPreviewLODDistanceEnabled')
+        local applied=ok and call(e.object,'GetPreviewLODDistance')
+        if enabled==true and type(applied)=='number' and applied==applied
+            and math.abs(applied-distance)<=math.max(.01,distance*.000001) then
+            e.previewApplied=applied
+        else
+            e.previewUnsupported=true
+            -- A callable setter is insufficient evidence that it took effect.
+            -- Restore an ignored/inconsistent successful call immediately.
+            if ok and valid(e.object) then
+                pcall(function()e.object:SetPreviewLODDistance(e.previewEnabled,e.previewDistance)end)
+            end
+        end
     end
 end
 local function report(g,text,log)
@@ -60,7 +79,7 @@ end
 function M.start(s,root,log,now)
     if s.worldLeaves or not valid(s.world) or not s.origin then return end
     local g={root=root,entries={},counts={leaves=0,crows=0},report={},statusAt=now+5,statusRemaining=2,
-        lodAt=now+1,previewSupported=lodSignature()};s.worldLeaves=g
+        lodAt=now+1,previewSupported=lodAvailable(),assets=assets()};s.worldLeaves=g
     local checked=0
     local ok,err=pcall(function()
         local objects=FindAllOf('DynamicEnvironmentNiagaraComponent')
@@ -70,7 +89,7 @@ function M.start(s,root,log,now)
             checked=checked+1;if checked>32 or #g.entries>=6 then break end
             if valid(c) and same(call(c,'GetWorld'),s.world) then
                 local owner=call(c,'GetOwner');local asset=call(c,'GetAsset')
-                local assetPath=path(asset);local kind=allowed[assetPath]
+                local assetPath=path(g.assets,asset);local kind=allowed[assetPath]
                 if valid(owner) and not same(owner,s.pawn) and kind and g.counts[kind]<3 then
                     local p=call(c,'K2_GetComponentLocation')
                     local x,y,z=p and p.X,p and p.Y,p and p.Z
@@ -106,7 +125,7 @@ function M.start(s,root,log,now)
     end)
     report(g,'Entry discovery: checked='..math.min(checked,32)..'; matched='..#g.entries..
         '; leaves='..g.counts.leaves..'; crows='..g.counts.crows..
-        '; capped at 3 per type, 6 nearby native effects; verified_camera_LOD_API='..tostring(g.previewSupported)..
+        '; capped at 3 per type, 6 nearby native effects; camera_LOD_function_found='..tostring(g.previewSupported)..
         (ok and '' or '; error='..tostring(err)),log)
     if not ok then M.restore(s) end
 end
@@ -114,12 +133,15 @@ function M.update(s,now,log)
     local g=s.worldLeaves
     if not g then return end
     if g.previewSupported and now>=g.lodAt then
-        g.lodAt=now+1
+        -- Native Niagara LOD changes can synchronize particle work. Spread
+        -- the up-to-six effects over updates instead of changing all together
+        -- in the same once-per-second frame.
+        g.lodAt=now+1/math.max(1,#g.entries)
         local position=s.flight and s.flight.p or s.origin
-        for _,e in ipairs(g.entries) do
-            if current(s,e) and e.previewEligible then
-                lodDistance(e,position)
-            end
+        if #g.entries>0 then
+            g.lodCursor=(g.lodCursor or 0)%#g.entries+1
+            local e=g.entries[g.lodCursor]
+            if e.previewEligible and current(s,e)then lodDistance(e,position)end
         end
     end
     if g.statusRemaining==0 or now<g.statusAt then return end

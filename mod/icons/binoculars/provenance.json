@@ -1,0 +1,128 @@
+{
+  "bandits": {
+    "source_sha256": "ac430fe6fb3fb8417abb4e5725da2273055114f7f95c13d1007362bcd4e2f1b0",
+    "alpha_bounds": [
+      53,
+      3,
+      459,
+      512
+    ]
+  },
+  "corpus": {
+    "source_sha256": "75c8eaad0102b02956f65e78967bb55a5ffa929aa83f33485bdcbe8ffb8bcd93",
+    "alpha_bounds": [
+      12,
+      9,
+      512,
+      504
+    ]
+  },
+  "duty": {
+    "source_sha256": "946fcadc5624ca5b3f9dd43edb58f4aeedfb515604094cca224dafc0f42cfb46",
+    "alpha_bounds": [
+      0,
+      0,
+      512,
+      512
+    ]
+  },
+  "freedom": {
+    "source_sha256": "5d7dc5d4016e0f473ef509d2c359019ce9a8f5f1d9d63e3ba7c1ec80991384e9",
+    "alpha_bounds": [
+      0,
+      39,
+      512,
+      473
+    ]
+  },
+  "ipsf": {
+    "source_sha256": "bedbcc5b0d6ee550a5f199d9e82dffc7a00e037ed2032a88d6c70e098736781a",
+    "alpha_bounds": [
+      28,
+      0,
+      484,
+      512
+    ]
+  },
+  "loners": {
+    "source_sha256": "fde75bb4fb703b4f3e36e467c7a54e8b77dff92545e6f70294a945ca2d5dbf0d",
+    "alpha_bounds": [
+      0,
+      0,
+      512,
+      512
+    ]
+  },
+  "mercenaries": {
+    "source_sha256": "1134fbe5d657483492596a4a7fc735e421654d6719f0af7f77cb41e420a2e0dc",
+    "alpha_bounds": [
+      0,
+      4,
+      512,
+      508
+    ]
+  },
+  "monolith": {
+    "source_sha256": "deeeafcf1184d3af4423bdceebedf19afc75339582a2814398ad65829ac864bd",
+    "alpha_bounds": [
+      7,
+      3,
+      505,
+      505
+    ]
+  },
+  "ndichaz": {
+    "source_sha256": "1d6c3f364cc2add2fe2d41de2773579612bcd5bf729d1f9c165c84381f540eb3",
+    "alpha_bounds": [
+      2,
+      67,
+      511,
+      446
+    ]
+  },
+  "noontide": {
+    "source_sha256": "457c6edbb4dec7c82e01715ee50e55173590bc3ebce944169302ee599c43477a",
+    "alpha_bounds": [
+      6,
+      5,
+      506,
+      509
+    ]
+  },
+  "scientists": {
+    "source_sha256": "ad6108c7d6bed99f8c5c09b381086d41a2844a76bd0eec507762816484f3c52e",
+    "alpha_bounds": [
+      4,
+      4,
+      508,
+      508
+    ]
+  },
+  "spark": {
+    "source_sha256": "f2b4222865f9d12fa9560016a7c7479dce142b1a86a7c3cf16316bfbb3a5775c",
+    "alpha_bounds": [
+      33,
+      0,
+      479,
+      510
+    ]
+  },
+  "ward": {
+    "source_sha256": "0dcc5b0b7f22c91705660cac4d9db5c8e64c7e8f0e0b43984792992a55848096",
+    "alpha_bounds": [
+      73,
+      2,
+      440,
+      510
+    ]
+  },
+  "x": {
+    "source_sha256": "107edc74a9a2fc8045a54e9e4af00fc6e6864329114bf80339ebbddd2b915fdb",
+    "alpha_bounds": [
+      25,
+      0,
+      487,
+      512
+    ]
+  }
+}

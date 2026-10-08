@@ -19,9 +19,13 @@ namespace fs=std::filesystem;
 #include "language.h"
 #include "osd.h"
 #include "controllers.h"
+#include "navigation_keys.h"
+#include "action_bindings.h"
+#include "action_exchange.h"
 #include "controller_profiles.h"
 #include "object_limit.h"
 #include "weather_menu.h"
+#include "pda_settings_bridge.h"
 using Axes=std::array<DWORD,8>;
 Axes axes(const JOYINFOEX& j){ return {j.dwXpos,j.dwYpos,j.dwZpos,j.dwRpos,j.dwUpos,j.dwVpos,controllers::extraAxes[0],controllers::extraAxes[1]}; }
 bool read(UINT id,JOYINFOEX& j){j={};j.dwSize=sizeof(j);j.dwFlags=JOY_RETURNALL;return joyGetPosEx(id,&j)==JOYERR_NOERROR;}
@@ -34,9 +38,9 @@ std::vector<Device> devices(){
     }
     return result;
 }
-bool gameFocused(){
+bool gameFocused(HWND foreground=GetForegroundWindow()){
     thread_local HWND cached=nullptr;thread_local bool result=false;
-    thread_local ULONGLONG checked=0;const auto foreground=GetForegroundWindow();const auto now=GetTickCount64();if(foreground==cached&&now-checked<1000)return result;cached=foreground;checked=now;
+    thread_local ULONGLONG checked=0;const auto now=GetTickCount64();if(foreground==cached&&now-checked<1000)return result;cached=foreground;checked=now;
     // UE4SS GUI Console and other tools may share the game's PID. Only the
     // Unreal viewport is eligible for our hotkeys, input and overlay placement.
     wchar_t windowClass[128]{};
@@ -113,13 +117,17 @@ int wmain(int argc,wchar_t** argv){
         if(!result.backupPath.empty())std::wcout<<L"Backup: "<<result.backupPath.c_str()<<L"\n";
         return 0;
     }
-    auto available=devices();
+    // The normal helper discovers USB devices through DirectInput/XInput.
+    // Repeated WinMM capability queries crashed the discovery worker in both
+    // recorded failures. Keep the old single-purpose CLI path separate.
+    const bool legacyCLI=cal||selected>=0;
+    auto available=legacyCLI?devices():std::vector<Device>{};
     for(const auto& d:available){
         char name[256]{};WideCharToMultiByte(CP_UTF8,0,d.caps.szPname,-1,name,sizeof(name),nullptr,nullptr);
         std::cout<<"Joystick "<<d.id<<": "<<name<<"; axes="<<d.caps.wNumAxes<<" buttons="<<d.caps.wNumButtons<<"\n";
         JOYINFOEX j{};read(d.id,j);Sleep(100);read(d.id,j);for(auto a:axes(j))std::cout<<a<<" ";std::cout<<"buttons="<<j.dwButtons<<"\n";
     }
-    controllers::scan();
+    controllers::scan(legacyCLI);
     if(probe){
         const auto start=GetTickCount64();
         const auto list=controllers::available;
@@ -140,7 +148,7 @@ int wmain(int argc,wchar_t** argv){
     HANDLE parent=parentPid?OpenProcess(SYNCHRONIZE,FALSE,parentPid):nullptr;
     if(parentPid&&!parent){ReleaseMutex(mutex);CloseHandle(mutex);return 8;}
     unsigned device=selected>=0?static_cast<unsigned>(selected)+1:0;
-    {std::ifstream f(root/L"controller.txt");unsigned saved=0;if(f>>saved)device=saved;}
+    if(selected<0){std::ifstream f(root/L"controller.txt");unsigned saved=0;if(f>>saved)device=saved;}
     if(!device){std::lock_guard<std::mutex> lock(controllers::mutex);if(!controllers::available.empty())device=controllers::available.front().id;}
     controllers::requested=device;
     // Migrate the old radio calibration only once, never to a newly selected device.
@@ -153,13 +161,49 @@ int wmain(int argc,wchar_t** argv){
     weatherMenu::root=root;osd::root=root;osd::load();
     {std::ifstream f(root/L"language.txt");int lang=0;if(f>>lang&&lang>=0&&lang<=4)language::current=lang;}
     {std::ifstream prefs(root/L"audio-volume.txt");float volume=0.5f;if(prefs>>volume && std::isfinite(volume) && volume>=0 && volume<=1)droneAudio::volume=volume;}
+    // Wake the sole snapshot writer as soon as a menu begins opening/closing,
+    // including when no controller is connected and discovery is idle.
+    weatherMenu::modalChanged=CreateEventW(nullptr,FALSE,FALSE,nullptr);
     std::atomic<bool> menuStop{false};
-    std::thread menuThread([&](){if(settings)weatherMenu::show();while(!menuStop){weatherMenu::pump(gameFocused());Sleep(16);}weatherMenu::cleanup();osd::cleanup();});
+    std::thread menuThread([&](){
+        navigationKeys::State keys;bool publicationFailed=false;
+        action_bindings::RuntimeActions actionKeys;
+        actionExchange::Writer actionWriter;bool actionPublicationFailed=false;
+        if(settings)weatherMenu::show();
+        while(!menuStop){
+            const auto foreground=GetForegroundWindow();
+            const bool focus=gameFocused(foreground);
+            const bool published=navigationKeys::publish(root,keys,focus&&!weatherMenu::visible(),(GetAsyncKeyState('Q')&0x8000)!=0,(GetAsyncKeyState('E')&0x8000)!=0);
+            if(!published&&!publicationFailed)std::cerr<<"Cannot publish PDA keyboard state.\n";
+            publicationFailed=!published;
+            // Capture and runtime actions share a coherent input sample. UI
+            // capture begins before runtime dispatch, so assigning a control
+            // cannot execute its old action in the same update.
+            const auto sample=weatherMenu::sampleSettingsHardware();
+            pdaSettings::bridge.pump(root,sample,focus,GetTickCount64());
+            weatherMenu::pump(focus,&sample,focus?foreground:nullptr);
+            const auto bindings=weatherMenu::getCurrentBindings();
+            const bool ownMenu=weatherMenu::focused();
+            const bool menuVisible=weatherMenu::visible(),gameFocus=gameFocused();
+            const bool menuInput=ownMenu||(menuVisible&&gameFocus);
+            auto edges=actionKeys.poll(bindings,sample,gameFocus,menuInput,weatherMenu::capturing()||pdaSettings::bridge.blocking(),GetTickCount64());
+            if(!weatherMenu::dispatchMenuState(edges[0],actionKeys.held()[0],bindings[0],menuInput,weatherMenu::currentModes().menu)&&edges[0])edges[0]=false;
+            const bool actionsEligible=gameFocused()&&!weatherMenu::visible()&&!weatherMenu::capturing()&&!pdaSettings::bridge.blocking();
+            const bool actionsPublished=actionWriter.publish(root,actionsEligible,edges,actionKeys.held());
+            if(!actionsPublished&&!actionPublicationFailed)std::cerr<<"Cannot publish action input.\n";
+            actionPublicationFailed=!actionsPublished;
+            Sleep(osd::scanMarkers.empty()?16:8);
+        }
+        weatherMenu::cleanup();osd::cleanup();
+    });
     std::thread audioThread([&](){droneAudio::run(root,menuStop);});
     std::cout<<"ZoneFPV input bridge running. Close this window / Ctrl+C to stop.\n";
     // Enumeration can block in a USB driver. Keep publishing input and servicing
     // the menu independently, so attaching a device cannot stall the bridge.
-    std::thread discoveryThread([&](){while(!menuStop){try{controllers::scan();}catch(const std::exception& e){std::cerr<<"Device scan: "<<e.what()<<"\n";}for(int i=0;i<20&&!menuStop;++i)Sleep(100);}});
+    // An explicit legacy device keeps its initial WinMM descriptor. Normal
+    // rescans omit WinMM; running them here would silently switch backends.
+    std::thread discoveryThread;
+    if(!legacyCLI)discoveryThread=std::thread([&](){while(!menuStop){try{controllers::scan();}catch(const std::exception& e){std::cerr<<"Device scan: "<<e.what()<<"\n";}for(int i=0;i<20&&!menuStop;++i)Sleep(100);}});
     ULONGLONG seq=0,start=GetTickCount64();
     unsigned preparedDevice=0;
     timeBeginPeriod(1);
@@ -167,21 +211,21 @@ int wmain(int argc,wchar_t** argv){
     while(!seconds||GetTickCount64()-start<seconds*1000ULL){
         if(parent&&WaitForSingleObject(parent,0)!=WAIT_TIMEOUT)break;
 
-        device=controllers::requested.load();
-        if(!device){std::lock_guard<std::mutex> lock(controllers::mutex);if(!controllers::available.empty()){device=controllers::available.front().id;controllers::requested=device;}}
+        device=controllers::selectAvailable();
         controllers::active=device;
         JOYINFOEX j{};bool connected=device&&controllers::read(device,j);
+        if(!device)controllers::publishLive({});
         if(!connected)preparedDevice=0;
         else if(device!=preparedDevice){try{controllerProfiles::ensure(root,device);preparedDevice=device;}catch(const std::exception& e){std::cerr<<"Profile: "<<e.what()<<"\n";}}
         auto raw=axes(j);
         weatherMenu::joystickConnected=connected;
-        if(connected)for(int i=0;i<8;++i)weatherMenu::liveAxes[i]=raw[i];
+        for(int i=0;i<8;++i)weatherMenu::liveAxes[i]=connected?raw[i]:0;
         const auto epoch=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
         char line[512];
         ++seq;
-        const bool menu=weatherMenu::focused();
+        const bool menu=weatherMenu::visible();
         int count=snprintf(line,sizeof(line),"4 %llu %lld %d %d %lu %lu %lu %lu %lu %lu %lu %lu %lu %d %u %llu\n",seq,epoch,
-            connected?1:0,(gameFocused()||menu)?1:0,raw[0],raw[1],raw[2],raw[3],raw[4],raw[5],raw[6],raw[7],j.dwButtons,menu?1:0,device,seq);
+            connected?1:0,(gameFocused()||weatherMenu::focused())?1:0,raw[0],raw[1],raw[2],raw[3],raw[4],raw[5],raw[6],raw[7],j.dwButtons,menu?1:0,device,seq);
         // Replacing a closed temporary file keeps readers from observing a torn packet.
         HANDLE f=CreateFileW(temp.c_str(),GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_TEMPORARY,nullptr);
         DWORD written=0;bool ok=f!=INVALID_HANDLE_VALUE;
@@ -189,11 +233,13 @@ int wmain(int argc,wchar_t** argv){
         if(ok)ok=MoveFileExW(temp.c_str(),snapshot.c_str(),MOVEFILE_REPLACE_EXISTING)!=0;
         if(!ok && ++errors>=250){std::cerr<<"Cannot publish input snapshot.\n";break;}
         if(ok)errors=0;
-        Sleep(connected?8:100);
+        const DWORD interval=connected||menu?8:100;
+        if(weatherMenu::modalChanged)WaitForSingleObject(weatherMenu::modalChanged,interval);else Sleep(interval);
     }
     menuStop=true;if(weatherMenu::window)PostMessageW(weatherMenu::window,WM_CANCELMODE,0,0);
-    discoveryThread.join();
+    if(discoveryThread.joinable())discoveryThread.join();
     menuThread.join();
     audioThread.join();
+    if(weatherMenu::modalChanged){CloseHandle(weatherMenu::modalChanged);weatherMenu::modalChanged=nullptr;}
     controllers::cleanup();timeEndPeriod(1);if(parent)CloseHandle(parent);ReleaseMutex(mutex);CloseHandle(mutex);return errors?7:0;
 }

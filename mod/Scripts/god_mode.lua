@@ -1,5 +1,15 @@
 local M={}
-local function valid(o) return o and (not o.IsValid or o:IsValid()) end
+local function valid(o)
+    local ok,value=pcall(function() return o and (not o.IsValid or o:IsValid()) end)
+    return ok and value
+end
+local function same(a,b)
+    if not valid(a) or not valid(b) then return false end
+    local ok,value=pcall(function()
+        return a==b or (a.GetAddress and b.GetAddress and a:GetAddress()==b:GetAddress())
+    end)
+    return ok and value
+end
 local function restore(state)
     if state.pawn and valid(state.pawn) and state.damage~=nil then state.pawn.bCanBeDamaged=state.damage end
     state.pawn=nil;state.damage=nil
@@ -9,9 +19,7 @@ function M.commands(enabled)
     return {'XSetGodMode '..value,'XSetFactionGodMode Player '..value}
 end
 function M.update(state,pawn,enabled,controller,system)
-    local same=valid(state.pawn) and valid(pawn) and
-        (state.pawn==pawn or (state.pawn.GetAddress and pawn.GetAddress and state.pawn:GetAddress()==pawn:GetAddress()))
-    local changed=not same
+    local changed=not same(state.pawn,pawn)
     if changed then
         restore(state)
         if valid(pawn) then state.pawn=pawn;state.damage=pawn.bCanBeDamaged end
@@ -26,6 +34,14 @@ function M.update(state,pawn,enabled,controller,system)
     end
     if enabled then state.pawn.bCanBeDamaged=false else state.pawn.bCanBeDamaged=state.damage end
     state.applied=enabled
+    return true
+end
+-- The FPV proxy temporarily owns the same flag as god mode. Its entry snapshot
+-- can differ from the user's current choice after a menu change in flight.
+-- Reapply that choice after proxy teardown even when commands are unchanged.
+function M.enforce_damage_flag(state,pawn,enabled)
+    if not same(state.pawn,pawn) or state.damage==nil then return false end
+    if enabled then pawn.bCanBeDamaged=false else pawn.bCanBeDamaged=state.damage end
     return true
 end
 function M.restore(state) restore(state) end

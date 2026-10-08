@@ -44,7 +44,7 @@ void checkDropdown(HWND combo){
 void destroyEditor(){if(const auto h=osd::editor.exchange(nullptr))assert(DestroyWindow(h));assert(!osd::editor.load());}
 void settings(const char* text){std::ofstream f(osd::root/L"osd-editor-window.txt",std::ios::trunc);f<<text;assert(f.good());}
 std::string layoutFile(){std::ifstream f(osd::root/L"osd-layout.txt",std::ios::binary);assert(f);return {std::istreambuf_iterator<char>(f),std::istreambuf_iterator<char>()};}
-void checkItems(const std::array<osd::Item,10>& expected){
+void checkItems(const decltype(osd::items)& expected){
     for(size_t i=0;i<expected.size();++i){const auto& actual=osd::items[i];const auto& item=expected[i];assert(actual.x==item.x&&actual.y==item.y&&actual.size==item.size&&actual.color==item.color&&actual.visible==item.visible);}
 }
 void pumpGame(HWND game,int width,int height){
@@ -64,6 +64,24 @@ int main(){
     const auto expectedItems=osd::items;assert(osd::save());const auto expectedLayout=layoutFile();
     osd::screenAspect=16.0/9;osd::createEditor(nullptr);
     const auto h=osd::editor.load();assert(h&&IsWindow(h)&&!IsWindowVisible(h)&&!osd::editing&&!osd::overlay);
+    assert(SendMessageW(osd::list,LB_GETCOUNT,0,0)==14);
+    assert(SendMessageW(osd::styleBox,CB_GETCOUNT,0,0)==6&&SendMessageW(osd::downStyleBox,CB_GETCOUNT,0,0)==6);
+    SendMessageW(osd::downStyleBox,CB_SETCURSEL,5,0);SendMessageW(h,WM_COMMAND,MAKEWPARAM(210,CBN_SELCHANGE),reinterpret_cast<LPARAM>(osd::downStyleBox));
+    assert(osd::downCrossStyle==5&&osd::crossStyle==2&&osd::previewCameraDown);
+    osd::selected=4;osd::items[4].visible=false;osd::refreshControls();assert(SendMessageW(osd::enabledBox,BM_GETCHECK,0,0)==BST_UNCHECKED);
+    SendMessageW(osd::downVisibleBox,BM_SETCHECK,BST_UNCHECKED,0);SendMessageW(h,WM_COMMAND,MAKEWPARAM(212,BN_CLICKED),reinterpret_cast<LPARAM>(osd::downVisibleBox));
+    assert(!osd::downCrossVisible&&!osd::items[4].visible);
+    SendMessageW(osd::downVisibleBox,BM_SETCHECK,BST_CHECKED,0);SendMessageW(h,WM_COMMAND,MAKEWPARAM(212,BN_CLICKED),reinterpret_cast<LPARAM>(osd::downVisibleBox));
+    assert(osd::downCrossVisible&&!osd::items[4].visible);osd::items[4].visible=true;
+    osd::downCrossStyle=4;SendMessageW(osd::downStyleBox,CB_SETCURSEL,4,0);osd::previewCameraDown=false;SendMessageW(osd::previewDownBox,BM_SETCHECK,BST_UNCHECKED,0);osd::save();
+    wchar_t ammoName[100]{};assert(SendMessageW(osd::list,LB_GETTEXT,13,reinterpret_cast<LPARAM>(ammoName))>0);
+    assert(wcscmp(ammoName,language::tr(L"Запас гранат"))==0);
+    assert(SendMessageW(osd::list,LB_SETCURSEL,13,0)==13);
+    SendMessageW(h,WM_COMMAND,MAKEWPARAM(201,LBN_SELCHANGE),reinterpret_cast<LPARAM>(osd::list));assert(osd::selected==13);
+    SendMessageW(osd::enabledBox,BM_SETCHECK,BST_UNCHECKED,0);
+    SendMessageW(h,WM_COMMAND,MAKEWPARAM(202,BN_CLICKED),reinterpret_cast<LPARAM>(osd::enabledBox));assert(!osd::items[13].visible);
+    osd::items=expectedItems;osd::selected=0;osd::save();osd::refreshControls();
+    std::cout<<"PASS common F6/PDA OSD editor exposes selectable ammunition visibility and preserves earlier items\n";
     assert((GetWindowLongPtrW(h,GWL_STYLE)&(WS_THICKFRAME|WS_MAXIMIZEBOX))==(WS_THICKFRAME|WS_MAXIMIZEBOX));
     MINMAXINFO limits{};SendMessageW(h,WM_GETMINMAXINFO,0,reinterpret_cast<LPARAM>(&limits));assert(limits.ptMinTrackSize.x==800&&limits.ptMinTrackSize.y==520);
     MONITORINFO monitor{};monitor.cbSize=sizeof(monitor);assert(GetMonitorInfoW(MonitorFromWindow(h,MONITOR_DEFAULTTONEAREST),&monitor));

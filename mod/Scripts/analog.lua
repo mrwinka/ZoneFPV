@@ -26,12 +26,52 @@ function M.save_style(root,style)
     M.save(root,style>0)
     return true
 end
-function M.apply(camera,enabled,style)
+local fields={'FilmGrainIntensity','FilmGrainTexelSize','FilmGrainIntensityShadows',
+    'FilmGrainIntensityMidtones','FilmGrainIntensityHighlights','SceneFringeIntensity',
+    'VignetteIntensity','ColorSaturation','ColorContrast'}
+local vectors={ColorSaturation=true,ColorContrast=true}
+local cameraStates=setmetatable({},{__mode='k'})
+local function capture(camera,pp,state,weight)
+    if state.originals then return end
+    local original={}
+    for _,name in ipairs(fields)do
+        local value=pp[name]
+        local row={value=value,override=pp['bOverride_'..name]}
+        if vectors[name] then
+            assert(value,'Camera colour settings unavailable')
+            row.vector={X=value.X,Y=value.Y,Z=value.Z,W=value.W};row.value=nil
+        end
+        original[name]=row
+    end
+    state.originals=original;state.weight=weight
+end
+function M.apply(camera,enabled,style,state)
+    -- A flight passes its own state because reflected UObject access may return
+    -- a new Lua wrapper for the same camera. The weak map retains compatibility
+    -- with callers that apply directly to a stable camera wrapper.
+    if not state then state=cameraStates[camera] or {};cameraStates[camera]=state end
+    local weight=camera.PostProcessBlendWeight
     -- Leave the effect disabled if any unsupported property raises an error.
     camera.PostProcessBlendWeight=0
-    if not enabled then return end
+    if not enabled then
+        if state.originals then
+            local pp=assert(camera.PostProcessSettings,'Camera post-process settings unavailable')
+            for _,name in ipairs(fields)do
+                local row=state.originals[name]
+                if row.vector then
+                    local value=pp[name];local original=row.vector
+                    value.X,value.Y,value.Z,value.W=original.X,original.Y,original.Z,original.W
+                else pp[name]=row.value end
+                pp['bOverride_'..name]=row.override==true
+            end
+            camera.PostProcessBlendWeight=state.weight
+            state.originals=nil;state.weight=nil
+        end
+        return
+    end
     local pp=camera.PostProcessSettings
     assert(pp,'Camera post-process settings unavailable')
+    capture(camera,pp,state,weight)
     local values={FilmGrainIntensity=0.65,FilmGrainTexelSize=2,
         FilmGrainIntensityShadows=1,FilmGrainIntensityMidtones=0.8,FilmGrainIntensityHighlights=0.35,
         SceneFringeIntensity=2.8,VignetteIntensity=0.52}

@@ -132,11 +132,24 @@ test('accepted 2x 3x 4x presets preserve their horizontal scaling and Acro rotat
         return s
     end
     local base=run(2)
-    for _,speed in ipairs({2,3,4}) do
+    for _,speed in ipairs({2,3,4,5}) do
         local s=run(speed)
         for _,k in ipairs({'x','y','z'}) do near(s.p[k],base.p[k]*(k=='z' and 1 or speed/2));near(s.v[k],base.v[k]) end
         for _,k in ipairs({'w','x','y','z'}) do near(s.q[k],base.q[k]) end
     end
+end)
+
+test('continuous 0-5 speed values validate and zero power safely falls',function()
+    for _,speed in ipairs({0,.25,.75,1.5,2.5,5}) do
+        local cfg=setmetatable({speed_preset=speed},{__index=c});f.validate(cfg)
+        local s=f.new({x=0,y=0,z=100},0)
+        for _=1,240 do f.step(s,{roll=0,pitch=0,yaw=0,throttle=1},cfg,cfg.step) end
+        for _,axis in ipairs({'x','y','z'}) do assert(s.p[axis]==s.p[axis] and math.abs(s.p[axis])<math.huge) end
+        if speed==0 then assert(s.thrust==0 and s.p.z<100 and s.v.z<0) end
+        f.collide(s,s.p,{x=0,y=0,z=1},0,0,speed)
+        assert(s.v.z==s.v.z)
+    end
+    assert(not pcall(f.validate,setmetatable({speed_preset=5.01},{__index=c})))
 end)
 test('fall trajectory is identical across presets and a mid-air preset change',function()
     local base=f.new({x=0,y=0,z=100},0)
@@ -227,5 +240,49 @@ test('switching to or from low power preserves world momentum',function()
         f.step(s,zero,cfg,c.step)
         near(s.v.x*newScale,12);near(s.p.x,12*c.step)
     end
+end)
+test('lower camera follows the full body pose and mount through banks, flips and vertical singularities',function()
+    local function unrealBasis(rotation,v)
+        local q=f.mul(f.axis(0,0,1,math.rad(rotation.Yaw)),
+            f.mul(f.axis(0,1,0,-math.rad(rotation.Pitch)),f.axis(1,0,0,-math.rad(rotation.Roll))))
+        return f.rotate(q,v)
+    end
+    local cases={}
+    for _,yaw in ipairs({0,.37,1.239,2.4,math.pi,-math.pi/2})do
+        for _,pitch in ipairs({0,1e-10,-1e-10,1e-7,-1e-7,.43,-.91,math.pi/2,-math.pi/2,math.pi})do
+            for _,roll in ipairs({0,.55,-.87,math.pi/2,-math.pi/2,math.pi})do
+                cases[#cases+1]=f.mul(f.axis(0,0,1,yaw),f.mul(f.axis(0,1,0,pitch),f.axis(1,0,0,roll)))
+            end
+        end
+    end
+    for _,q in ipairs(cases)do
+        local state=f.new({x=1,y=2,z=30},0);state.q=q
+        local before={w=q.w,x=q.x,y=q.y,z=q.z}
+        local normal=f.camera_rotation(state,35)
+        local below=f.camera_rotation(state,35,true)
+        -- View forward = body underside, view right = body right, view up =
+        -- body front. This checks physical axes rather than ambiguous Euler angles.
+        for _,pair in ipairs({{{x=1,y=0,z=0},{x=0,y=0,z=-1}},
+            {{x=0,y=1,z=0},{x=0,y=1,z=0}},{{x=0,y=0,z=1},{x=1,y=0,z=0}}})do
+            local actual=unrealBasis(below,pair[1]);local expected=f.rotate(q,pair[2])
+            for _,axis in ipairs({'x','y','z'})do near(actual[axis],expected[axis],1e-6)end
+        end
+        local mount=f.camera_position(state,true,.12);local offset=f.rotate(q,{x=0,y=0,z=-.09})
+        for _,axis in ipairs({'x','y','z'})do near(mount[axis],state.p[axis]+offset[axis])end
+        for _,key in ipairs({'w','x','y','z'})do near(state.q[key],before[key])end
+        assert(f.camera_position(state,false,.12)==state.p,'forward view keeps original position')
+        local returned=f.camera_rotation(state,35,false)
+        for _,key in ipairs({'Pitch','Yaw','Roll'})do near(returned[key],normal[key])end
+    end
+end)
+test('payload collision ends fixed-step movement at first contact',function()
+    local state=f.new({x=0,y=0,z=20},0)
+    state.v.x=10
+    local contacts=0
+    local continued=f.advance(state,zero,c,.1,function(body)
+        contacts=contacts+1;body.p={x=5,y=0,z=20};return false
+    end)
+    assert(continued==false and contacts==1 and state.accumulator==0)
+    near(state.p.x,5);near(state.p.z,20)
 end)
 print(n..' tests passed')

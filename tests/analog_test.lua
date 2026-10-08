@@ -10,6 +10,35 @@ print('PASS analog styling is camera-local and can be disabled')
 local bad={PostProcessBlendWeight=1,PostProcessSettings=setmetatable({},{__newindex=function() error('unsupported property') end})}
 assert(not pcall(analog.apply,bad,true));assert(bad.PostProcessBlendWeight==0)
 print('PASS unsupported analog property leaves effect disabled')
+local owned={'FilmGrainIntensity','FilmGrainTexelSize','FilmGrainIntensityShadows',
+ 'FilmGrainIntensityMidtones','FilmGrainIntensityHighlights','SceneFringeIntensity','VignetteIntensity'}
+for style=1,4 do
+    local pp={ColorSaturation={X=.81,Y=.82,Z=.83,W=.84},ColorContrast={X=1.21,Y=1.22,Z=1.23,W=1.24},
+        bOverride_ColorSaturation=false,bOverride_ColorContrast=true,BloomIntensity=7,bOverride_BloomIntensity=true}
+    for i,name in ipairs(owned)do pp[name]=i/10;pp['bOverride_'..name]=i%2==0 end
+    local component={PostProcessSettings=pp,PostProcessBlendWeight=.37};local state={}
+    analog.apply(component,true,style,state)
+    analog.apply(component,true,style%4+1,state)
+    analog.apply(component,false,0,state)
+    assert(component.PostProcessBlendWeight==.37 and state.originals==nil)
+    for i,name in ipairs(owned)do
+        assert(pp[name]==i/10 and pp['bOverride_'..name]==(i%2==0),name..' must restore its original value and override')
+    end
+    assert(pp.ColorSaturation.X==.81 and pp.ColorSaturation.W==.84 and not pp.bOverride_ColorSaturation)
+    assert(pp.ColorContrast.Z==1.23 and pp.ColorContrast.W==1.24 and pp.bOverride_ColorContrast)
+    assert(pp.BloomIntensity==7 and pp.bOverride_BloomIntensity,'analog must not own other post-process fields')
+end
+print('PASS all analog styles restore exact scalar/vector/override/weight baselines after repeated style changes')
+local native={PostProcessBlendWeight=0,PostProcessSettings={ColorSaturation={X=1,Y=1,Z=1,W=1},ColorContrast={X=1,Y=1,Z=1,W=1}}}
+local function wrapper()
+    return setmetatable({},{__index=function(_,key)return native[key]end,__newindex=function(_,key,value)native[key]=value end})
+end
+local state={}
+analog.apply(wrapper(),true,4,state)
+analog.apply(wrapper(),false,0,state)
+assert(native.PostProcessBlendWeight==0 and not native.PostProcessSettings.bOverride_FilmGrainIntensity)
+assert(native.PostProcessSettings.ColorSaturation.X==1 and not native.PostProcessSettings.bOverride_ColorSaturation)
+print('PASS explicit flight state restores across different reflected wrappers for the same native camera')
 local rawOpen=io.open;local contents
 io.open=function(_,mode)
     if mode=='r' and not contents then return nil end

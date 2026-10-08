@@ -63,9 +63,22 @@ test('equal fractions retain query order unless a hit starts penetrating',functi
     local first=hit(0.2);first.Normal.X=1
     local s,sys=fixture({channel_simple=first,profile_simple=hit(0.2),channel_complex=hit(0.2),profile_complex=hit(0.2)})
     local yes,h=collision.trace(sys,s,start,finish,12);assert(yes and h.Normal.X==1)
-    local penetrating=hit(0.2);penetrating.bStartPenetrating=true
+    local penetrating=hit(0);penetrating.bStartPenetrating=true
     s,sys=fixture({channel_simple=hit(0),profile_complex=penetrating})
     yes,h=collision.trace(sys,s,start,finish,12);assert(yes and h.bStartPenetrating)
+end)
+test('packed blocking bit cannot make swept impacts appear initially overlapping',function()
+    local far=hit(.8);far.bStartPenetrating=true;far.PenetrationDepth=0
+    local near=hit(.2);near.bStartPenetrating=true;near.PenetrationDepth=0
+    local s,sys=fixture({channel_simple=far,profile_complex=near})
+    local yes,h=collision.trace(sys,s,start,finish,12)
+    assert(yes and h.Time==.2 and not collision.isPenetrating(h),'real sweep time chooses the nearest wall')
+    for _,depth in ipairs({0,2})do
+        local overlap=hit(0);overlap.bStartPenetrating=true;overlap.PenetrationDepth=depth
+        assert(collision.isPenetrating(overlap),'actual Time=0 overlaps remain protected')
+    end
+    local unknown=hit(0);unknown.Time=nil;unknown.bStartPenetrating=true
+    assert(collision.isPenetrating(unknown),'unknown penetration remains conservative')
 end)
 test('native hit output tables remain separate across queries and steps',function()
     local s,sys,calls,reads,outputs=fixture({channel_simple=hit(0.1),profile_complex=hit(0.8)})

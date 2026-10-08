@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "mount_point": "../../../",
+  "entry": "Stalker2/Content/GameLite/GameData/ExplosionPrototypes/ExplosionPrototypes_patch_ZoneFPVWeapons.cfg",
+  "prototype_sids": [
+    "ZoneFPV_Kamikaze_01",
+    "ZoneFPV_Kamikaze_02",
+    "ZoneFPV_Kamikaze_03",
+    "ZoneFPV_Kamikaze_04",
+    "ZoneFPV_Kamikaze_05",
+    "ZoneFPV_Kamikaze_06",
+    "ZoneFPV_Kamikaze_07",
+    "ZoneFPV_Kamikaze_08",
+    "ZoneFPV_Kamikaze_09",
+    "ZoneFPV_Kamikaze_10",
+    "ZoneFPV_Kamikaze_11",
+    "ZoneFPV_Kamikaze_12",
+    "ZoneFPV_Kamikaze_13",
+    "ZoneFPV_Kamikaze_14",
+    "ZoneFPV_Kamikaze_15",
+    "ZoneFPV_Kamikaze_16",
+    "ZoneFPV_Kamikaze_17",
+    "ZoneFPV_Kamikaze_18",
+    "ZoneFPV_Kamikaze_19",
+    "ZoneFPV_Kamikaze_20"
+  ],
+  "base_prototype": "ExplosionF1",
+  "decoded_base_reference_sha256": "76622aa6afc4a72d73b064cf21c5d26752ca8cc8a628c14c983d11ff8eaee2cc",
+  "native_grenade_prototypes_unchanged": [
+    "ExplosionRGD5",
+    "ExplosionF1"
+  ],
+  "power_min": 0.25,
+  "power_max": 5,
+  "power_step": 0.25,
+  "damage_and_impulse_scaling": "power",
+  "radius_scaling": "sqrt(power)",
+  "cfg_sha256": "10663f48ad522f2ef0b7e75ae816920c04f4672524af24552aab5f14f19bbd3a",
+  "pak_sha256": "fd1f4a76d00b2479940f7a47ef96613680df18813bd6455a7141a7254d132b1d",
+  "repak_sha256": "fcd538e5994b9bb833622d425ae346f4e0692f02d4b0025114a559f9b6286022",
+  "repak_version": "repak_cli 0.2.3",
+  "pak_info": "mount point: ../../../\nversion: V11\nversion major: Fnv64BugFix\nencrypted index: false\nencrytion guid: Some(00000000000000000000000000000000)\ncompression: None\npath hash seed: Some(00000000)\n1 file entries",
+  "verified": [
+    "source structure",
+    "20 scalar power steps",
+    "one additive entry",
+    "mount point",
+    "binary round trip"
+  ]
+}

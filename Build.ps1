@@ -16,7 +16,9 @@ if errorlevel 1 exit /b 1
 "@
 $batch=Join-Path $build 'compile.cmd'
 [IO.File]::WriteAllText($batch,$commands,[Text.Encoding]::Default)
-& $batch
-if($LASTEXITCODE -ne 0){throw 'MSVC build failed.'}
+$compilerOutput=& $batch 2>&1
+$compilerExit=$LASTEXITCODE
+$compilerOutput | Write-Output
+if($compilerExit -ne 0 -or ($compilerOutput -join "`n") -match '(?i)\b(error|ошибка)\s+C\d{4}\b'){throw 'MSVC build failed.'}
 Copy-Item -LiteralPath (Join-Path $build 'ZoneFPVInput.exe') -Destination (Join-Path $PSScriptRoot 'mod\ZoneFPVInput.exe') -Force
 Write-Host 'Input bridge rebuilt. The Lua mod uses source files directly.'

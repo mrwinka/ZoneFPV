@@ -2,8 +2,17 @@ local M={}
 local transparent={R=0,G=0,B=0,A=0}
 local representations={false,true}
 local function finite(v) return type(v)=='number' and v==v and math.abs(v)<math.huge end
+function M.isPenetrating(hit)
+    if not hit.bStartPenetrating then return false end
+    -- UE4SS's out-struct BoolProperty conversion can read the whole packed byte,
+    -- aliasing bBlockingHit into bStartPenetrating. A positive sweep Time with
+    -- no depenetration depth is an ordinary impact; keep Time=0 overlaps intact.
+    if finite(hit.Time)and hit.Time>0 and hit.Time<=1
+        and finite(hit.PenetrationDepth)and hit.PenetrationDepth<=0 then return false end
+    return true
+end
 local function fraction(hit,startPos,endPos)
-    if hit.bStartPenetrating then return 0 end
+    if M.isPenetrating(hit)then return 0 end
     if finite(hit.Time) then return math.max(0,math.min(1,hit.Time)) end
     local dx,dy,dz=endPos.X-startPos.X,endPos.Y-startPos.Y,endPos.Z-startPos.Z
     local length2=dx*dx+dy*dy+dz*dz
@@ -14,7 +23,7 @@ end
 local function consider(best,bestTime,yes,hit,startPos,endPos)
     if not yes then return best,bestTime end
     local time=fraction(hit,startPos,endPos)
-    if time<bestTime or (time==bestTime and hit.bStartPenetrating and not (best and best.bStartPenetrating)) then
+    if time<bestTime or (time==bestTime and M.isPenetrating(hit)and not(best and M.isPenetrating(best)))then
         return hit,time
     end
     return best,bestTime

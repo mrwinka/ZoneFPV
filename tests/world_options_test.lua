@@ -27,6 +27,31 @@ test('god mode uses native player and faction commands only on state changes',fu
     assert(pawn.bCanBeDamaged and not state.pawn)
 end)
 
+test('freeze restoration uses the owned world after a controller world change',function()
+    local original,current={},{}
+    local context
+    local g={IsGamePaused=function()return false end,GetGlobalTimeDilation=function()return .75 end,
+        SetGlobalTimeDilation=function(_,world,v)context=world end}
+    local s={pc={},world=original}
+    freeze.set(s,true,g);s.pc.world=current
+    freeze.set(s,false,g)
+    assert(context==original and not s.freezeOwned and not s.freezePrepared)
+end)
+
+test('God flag reconciliation respects updated settings and stale identities',function()
+    local pawn={bCanBeDamaged=true,GetAddress=function(self)return self end}
+    local controller={};local system={ExecuteConsoleCommand=function()end};local state={}
+    god.update(state,pawn,false,controller,system)
+    pawn.bCanBeDamaged=false -- proxy shield was restored from an older snapshot
+    assert(god.enforce_damage_flag(state,pawn,false) and pawn.bCanBeDamaged)
+    assert(god.enforce_damage_flag(state,pawn,true) and not pawn.bCanBeDamaged)
+    local other={bCanBeDamaged=true}
+    assert(not god.enforce_damage_flag(state,other,true) and other.bCanBeDamaged)
+    function pawn:IsValid()error('expired wrapper')end
+    assert(not god.enforce_damage_flag(state,pawn,false))
+    god.restore(state);assert(not state.pawn)
+end)
+
 test('world checkbox preferences and command validation',function()
     local raw=io.open;local files={}
     io.open=function(path,mode)
@@ -37,6 +62,9 @@ test('world checkbox preferences and command validation',function()
     local cfg=prefs.load('mock/');assert(not cfg.freeze and cfg.npcs and not cfg.alternate and not cfg.god)
     assert(prefs.save('mock/',cfg,'alternate',true));assert(not cfg.npcs and prefs.load('mock/').alternate)
     assert(prefs.save('mock/',cfg,'alternate',false));assert(cfg.npcs and not prefs.load('mock/').alternate)
+    assert(prefs.save('mock/',cfg,'noclip',true));assert(not cfg.npcs and prefs.load('mock/').noclip)
+    assert(prefs.save('mock/',cfg,'noclip',false));assert(cfg.npcs)
+    assert(select(2,env.parse('4 option noclip 1'))=='FPVOption noclip 1')
     local _,altCommand=env.parse('3 option alternate 1');assert(altCommand=='FPVOption alternate 1')
     assert(prefs.save('mock/',cfg,'freeze',true));assert(prefs.load('mock/').freeze)
     assert(not prefs.save('mock/',cfg,'other',true))

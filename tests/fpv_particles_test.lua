@@ -7,8 +7,14 @@ io.open=function()return {write=function()end,close=function()end}end
 FindAllOf=function()error('world scans forbidden')end
 local function object(t)
     t=t or {};function t:IsValid()return not self.invalid end
-    function t:GetAddress()return self end
+    function t:GetAddress()assert(not self.invalid,'expired UObject address read');return self end
+    function t:GetFullName()error('live UObject name conversion forbidden')end
     return t
+end
+local assets={}
+local function assetAt(path)
+    if not assets[path] then assets[path]=object({path=path}) end
+    return assets[path]
 end
 FName=function(text) return {type=function()return 'FName' end,ToString=function()return text end} end
 local function array(values)
@@ -19,6 +25,9 @@ local function array(values)
         end,__newindex=function()error('native array write forbidden')end})
 end
 local types={Float=1,Int=2,Bool=3,Vec3=4,Position=5}
+local deprecatedTypes=false
+local typeObjects={}
+for tag in pairs(types)do typeObjects[tag]=object()end
 local function niagara(owner,asset,active)
     local c=object({owner=owner,asset=asset,active=active,vars={},values={},order={},locations=0,sets=0,
         bHiddenInGame=true,bUseAttachParentBound=true})
@@ -28,6 +37,10 @@ local function niagara(owner,asset,active)
             local item=c.values[text]
             vars[#vars+1]={type=function()return 'UScriptStruct' end,Name=FName(text),Offset=offset,
                 TypeDefHandle={RegisteredTypeIndex=types[item.tag]}}
+            if deprecatedTypes then
+                vars[#vars].TypeDefHandle=nil
+                vars[#vars].TypeDef_DEPRECATED={ClassStructOrEnum=typeObjects[item.tag]}
+            end
             for i=1,#item.raw do data[#data+1]=item.raw:byte(i) end
             offset=offset+#item.raw
             if item.tag=='Position' then positions[#positions+1]={Name=FName(text),Value=item.value} end
@@ -50,7 +63,7 @@ local function niagara(owner,asset,active)
             writes=writes+1;self.sets=self.sets+1;self:put(tag,key,value)
         end
     end
-    function c:GetClass()return {GetFName=function()return FName('DynamicEnvironmentNiagaraComponent')end}end
+    function c:GetClass()error('live class/name introspection forbidden')end
     function c:GetOwner()return self.owner end;function c:GetAsset()return self.asset end
     function c:K2_GetComponentLocation()return self.position or {X=10000,Y=20000,Z=2200}end
     function c:SetAbsolute(x,y,z)assert(x and y and z);self.absolute=true end
@@ -65,7 +78,7 @@ local function niagara(owner,asset,active)
     function c:Activate()
         self.activations=(self.activations or 0)+1
         assert(self.position,'configure before activation')
-        if self.asset:GetFullName():find('NS_Dyn_Rain_Weather',1,true) then
+        if self.asset.path:find('NS_Dyn_Rain_Weather',1,true) then
             assert(self.values['User.AttractorPosition'],'configure rain target before activation')
         end
         self.active=true
@@ -74,7 +87,7 @@ local function niagara(owner,asset,active)
     function c:K2_DestroyComponent(owner)assert(owner==self.owner);self.invalid=true end
     store();return c
 end
-local asset=object({GetFullName=function()return 'Object /Game/_Stalker_2/VFX/Environment/Rain/Niagara/NS_Dyn_Rain_Weather:NS_Dyn_Rain_Weather'end})
+local asset=assetAt('/Game/_Stalker_2/VFX/Environment/Rain/Niagara/NS_Dyn_Rain_Weather.NS_Dyn_Rain_Weather')
 local function setup()
     local pawn=object({bHidden=true,K2_GetActorLocation=function()return {X=10000,Y=20000,Z=100}end})
     local camera=object({bHidden=true,SetActorHiddenInGame=function(self,v)self.bHidden=v end});camera.CameraComponent=object({owner=camera})
@@ -92,7 +105,12 @@ local library=object({SpawnSystemAttached=function(_,template,parent,attach,loc,
     assert(attach:ToString()=='None')
     local clone=niagara(parent.owner,template,false);clone.testClone=true;clones[#clones+1]=clone;return clone
 end})
-StaticFindObject=function(path)finds=finds+1;assert(path=='/Script/Niagara.Default__NiagaraFunctionLibrary');return library end
+StaticFindObject=function(path)
+    finds=finds+1
+    if path=='/Script/Niagara.Default__NiagaraFunctionLibrary' then return library end
+    assert(path:match('^/Game/_Stalker_2/VFX/'),'only fixed asset paths may be resolved')
+    return assets[path]
+end
 local function log(v)logs[#logs+1]=v end
 local s,source=setup()
 local original=source.OverrideParameters
@@ -177,7 +195,7 @@ print('PASS readable empty clone position metadata permits validated alias')
 
 -- Player leaves may be positioned entirely by the component world transform.
 s,source=setup()
-source.asset=object({GetFullName=function()return 'Object /Game/_Stalker_2/VFX/Player/NS_Leaves_Player:NS_Leaves_Player'end})
+source.asset=assetAt('/Game/_Stalker_2/VFX/Player/NS_Leaves_Player.NS_Leaves_Player')
 source.values['User.AttractorPosition']=nil;table.remove(source.order,1)
 source:put('Float',FName('User.RainIntensity'),.5)
 M.update(s,7.7,'mock/',log);clone=clones[#clones]
@@ -191,7 +209,7 @@ print('PASS known leaf asset without AttractorPosition uses world transform')
 -- Native leaf location is refreshed separately from the pawn's anchor.
 local function setupLeaves()
     local s,source=setup()
-    source.asset=object({GetFullName=function()return 'Object /Game/_Stalker_2/VFX/Player/NS_Leaves_Player:NS_Leaves_Player'end})
+    source.asset=assetAt('/Game/_Stalker_2/VFX/Player/NS_Leaves_Player.NS_Leaves_Player')
     source.values['User.AttractorPosition']=nil;table.remove(source.order,1)
     source.position={X=10000,Y=20000,Z=150}
     source:put('Float',FName('User.TerrainOffset'),27)
@@ -324,4 +342,62 @@ s,source=setup();source.OverrideParameters.OriginalPositionData=nil
 M.update(s,9,'mock/',log);clone=clones[#clones]
 assert(clone.invalid and next(s.fpvParticles.entries)==nil);M.restore(s)
 print('PASS unrelated type collision and missing semantic position metadata fail closed')
+
+-- Older Niagara type descriptors use persistent reflected type objects. Their
+-- verified addresses identify a type without converting native names/outers.
+deprecatedTypes=true
+s,source=setup();M.update(s,30,'mock/',log);clone=clones[#clones]
+assert(not clone.invalid and clone.active and clone.values['User.RainIntensity'].value==.75)
+assert(clone.values['User.AttractorPosition'].value.Z==200 and clone.values['User.WindDirection'].value.Y==2)
+M.restore(s);deprecatedTypes=false
+print('PASS deprecated Niagara type identity uses validated addresses without native names')
+
+-- A similarly named unregistered object is not the trusted loaded template.
+s,source=setup();source.asset=object({path=asset.path})
+local beforeClones=#clones;M.update(s,31,'mock/',log)
+assert(#clones==beforeClones and next(s.fpvParticles.entries)==nil)
+M.restore(s)
+local rainPath=asset.path;assets[rainPath]=nil
+s,source=setup();M.update(s,32,'mock/',log)
+assert(#clones==beforeClones and next(s.fpvParticles.entries)==nil)
+assets[rainPath]=asset;s.playerVisibility.nextScan=2;M.update(s,33,'mock/',log)
+assert(#clones==beforeClones+1 and clones[#clones].active,'late static asset availability recovers on bounded discovery')
+M.restore(s)
+print('PASS exact loaded template identity and late asset lookup recovery')
+
+-- Absent weather paths scan the global UObject collection. A normal two-second
+-- equipment scan must not repeat those missing-template lookups during flight.
+s,source=setup();M.update(s,40,'mock/',log);clone=clones[#clones]
+local beforeFinds=finds;local beforeActivations=clone.activations
+for i=1,30 do
+    s.playerVisibility.nextScan=s.playerVisibility.nextScan+2
+    M.update(s,40+i*2,'mock/',log)
+end
+assert(finds==beforeFinds,'stable source templates cannot trigger any repeated global asset lookup')
+assert(clone.active and not clone.invalid and clone.activations==beforeActivations,
+    'cached template identity must retain the running native-driven mirror')
+assert(type(s.fpvParticles.performance.lookupMaxMs)=='number' and
+    type(s.fpvParticles.performance.discoveryMaxMs)=='number' and
+    type(s.fpvParticles.performance.copyMaxMs)=='number','particle phases expose separate bounded timings')
+local _,sameTemplateSource=setup();sameTemplateSource.owner=s.pawn
+s.playerVisibility.components={{object=sameTemplateSource,flags={bVisible=true}}}
+s.playerVisibility.nextScan=s.playerVisibility.nextScan+2;M.update(s,102,'mock/',log)
+assert(finds==beforeFinds and not clone.invalid and clone.activations==beforeActivations,
+    'a new provider using a known template must not rescan missing assets or restart the simulation')
+M.restore(s)
+print('PASS flight scans never retry missing templates, provider handoff retains cache, and phase timings are bounded')
+
+s,source=setup();source.asset=object({path=asset.path})
+M.update(s,110,'mock/',log)
+local firstProbe=finds
+s.playerVisibility.nextScan=s.playerVisibility.nextScan+2;M.update(s,112,'mock/',log)
+assert(finds>firstProbe,'one unresolved-template follow-up preserves late native registration')
+local lastProbe=finds
+for i=1,30 do
+    s.playerVisibility.nextScan=s.playerVisibility.nextScan+2;M.update(s,112+i*2,'mock/',log)
+end
+assert(finds==lastProbe and next(s.fpvParticles.entries)==nil,
+    'unsupported stable templates must stop global probing after one bounded follow-up')
+M.restore(s)
+print('PASS unresolved native template gets one follow-up then stops missing-path global searches')
 io.open=rawOpen

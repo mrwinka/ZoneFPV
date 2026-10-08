@@ -6,10 +6,13 @@ M.clamp=clamp
 -- and aerodynamic coefficients are the same as 2x; no artificial braking.
 function M.horizontal_scale(preset) return preset<2 and 1 or preset/2 end
 local function throttle_limit(preset)
-    return preset==0.5 and 0.50 or (preset==1 and 0.70 or 1)
+    if preset<=0.5 then return preset end
+    if preset<=1 then return 0.5+(preset-0.5)*0.4 end
+    if preset<2 then return 0.7+(preset-1)*0.3 end
+    return 1
 end
 function M.validate(c)
-    assert(c.speed_preset==0.5 or c.speed_preset==1 or c.speed_preset==2 or c.speed_preset==3 or c.speed_preset==4,'Invalid config: speed_preset')
+    assert(type(c.speed_preset)=='number' and c.speed_preset==c.speed_preset and c.speed_preset>=0 and c.speed_preset<=5,'Invalid config: speed_preset')
     local ranges={step={1/2000,1/60},gravity={0.1,30},thrust_to_weight={1.1,20},
         throttle_curve={0,1},expo={0,1},deadband={0,0.25},rate_response={0.001,1},
         motor_response={0.001,1},roll_rate={10,2000},pitch_rate={10,2000},yaw_rate={10,2000},
@@ -85,7 +88,7 @@ function M.step(s,u,c,dt)
         s.v.x,s.v.y=s.v.x*ratio,s.v.y*ratio
     end
     s.previousPreset=preset
-    attitude(s,u,c,dt)
+    if not s.linkLost then attitude(s,u,c,dt) end
     local t=clamp(u.throttle,0,1)*throttle_limit(preset)
     if c.flight_mode=='3d' then
         local signed=clamp(u.throttle,0,1)*2-1
@@ -93,6 +96,7 @@ function M.step(s,u,c,dt)
     end
     local thrust=c.gravity*c.thrust_to_weight*((1-c.throttle_curve)*t+c.throttle_curve*t*math.abs(t))
     s.thrust=s.thrust+(thrust-s.thrust)*(1-math.exp(-dt/c.motor_response))
+    if s.linkLost or preset==0 then s.thrust=0 end
     local q,v,p=s.q,s.v,s.p
     -- Rotate only the body up axis; no vector or quaternion scratch tables.
     local upX=2*(q.x*q.z+q.w*q.y)
@@ -115,7 +119,11 @@ function M.advance(s,u,c,dt,collision)
     while s.accumulator+1e-12>=c.step do
         local old=collision and {x=s.p.x,y=s.p.y,z=s.p.z}
         M.step(s,u,c,c.step)
-        if collision then collision(s,old) end
+        if collision and collision(s,old)==false then
+            -- An impact-triggered payload ends this movement segment. Keep
+            -- its contact position rather than stepping through the surface.
+            s.accumulator=0;return false
+        end
         s.accumulator=s.accumulator-c.step
     end
     -- Collision work stays bounded to 100 ms, but do not slow Acro rotation when
@@ -123,7 +131,7 @@ function M.advance(s,u,c,dt,collision)
     local remaining=clamp(dt,0,1)-clamp(dt,0,0.1)
     while remaining>1e-12 do
         local step=math.min(remaining,c.step)
-        attitude(s,u,c,step)
+        if not s.linkLost then attitude(s,u,c,step) end
         remaining=remaining-step
     end
 end
@@ -147,12 +155,29 @@ function M.collide(s,position,normal,restitution,friction,speedPreset)
     end
     s.v.x,s.v.y,s.v.z=vx/scale,vy/scale,vz/1.5
 end
-function M.camera_rotation(s,tilt)
-    local q=M.mul(s.q,M.axis(0,1,0,-math.rad(tilt)))
+function M.camera_rotation(s,tilt,down)
+    -- Both cameras are rigid mounts on the body. The lower camera's forward
+    -- axis is body -Z; tilting/rolling/flipping the drone carries it along.
+    local q=M.mul(s.q,M.axis(0,1,0,down and math.pi/2 or -math.rad(tilt)))
     -- Unreal FRotator conventions: positive pitch up, positive roll clockwise.
-    local sinp=2*(q.w*q.y-q.z*q.x)
-    return {Pitch=-math.deg(math.asin(clamp(sinp,-1,1))),
-        Yaw=math.deg(math.atan(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))),
+    local fx,fy,fz=1-2*(q.y*q.y+q.z*q.z),2*(q.x*q.y+q.w*q.z),2*(q.x*q.z-q.w*q.y)
+    local horizontal=math.sqrt(fx*fx+fy*fy)
+    if horizontal<1e-8 then
+        -- At vertical pitch yaw and roll share an axis. Choose roll zero and
+        -- preserve their combined rotation; atan2(0,0) would lose the mount.
+        return {Pitch=math.deg(math.atan(fz,horizontal)),
+            Yaw=math.deg(math.atan(2*(q.w*q.z-q.x*q.y),1-2*(q.x*q.x+q.z*q.z))),Roll=0}
+    end
+    return {Pitch=math.deg(math.atan(fz,horizontal)),
+        Yaw=math.deg(math.atan(fy,fx)),
         Roll=-math.deg(math.atan(2*(q.w*q.x+q.y*q.z),1-2*(q.x*q.x+q.y*q.y)))}
+end
+function M.camera_position(s,down,radius)
+    local p=s.p
+    if not down then return p end
+    -- Keep the mount inside the collision envelope so the lower view cannot
+    -- protrude through a surface the drone itself has safely stopped against.
+    local offset=M.rotate(s.q,{x=0,y=0,z=-(radius or 0)*.75})
+    return {x=p.x+offset.x,y=p.y+offset.y,z=p.z+offset.z}
 end
 return M

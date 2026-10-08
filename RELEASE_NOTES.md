@@ -1,43 +1,46 @@
-# ZoneFPV 0.2.0 — 2026-10-03
+# ZoneFPV 0.3.0 RC1 debug v58
 
-Stable release, verified in game by the author. The full download includes the installer, native helper, source and licenses. Compatible UE4SS is required separately.
+Experimental prerelease based on 0.2.0. This release includes the accumulated 0.3.0 work and the latest offline scanner/visibility corrections. Full gameplay verification remains pending.
 
-Changes since RC3:
+## Changes since 0.2.0
 
-- Main FPV is now the default, with an explained alternative mode. Stronger simple/complex sphere collision checks use both the trace channel and player profile.
-- Hide the player, weapon, shadow and subtitles during FPV; restore saved player/UI states on exit. Isolate player detection without stopping NPCs and mutants from fighting each other.
-- Keep drone position when changing weather/time. World freeze remains usable, and closing F6 or losing game focus keeps FPV active.
-- Add uniform geometry loading multipliers from 1× to 5× across all ten original streaming grids, restoring their original settings on exit.
-- Add a DualShock 4 DirectInput profile. Physical DS4 testing is still pending.
-- Preserve rain, falling leaves and crows across the FPV transition, with bounded recovery when the game replaces particle components.
-- Resize or maximize the F6 menu and OSD settings window, with saved dimensions and scaled controls/fonts. The OSD preview follows the game's aspect ratio without changing saved element positions.
-- Restore the game HUD immediately after leaving FPV; opening and closing Esc/settings is no longer needed.
-- Reduce repeated physics, camera, UI, audio and particle work while keeping 240 Hz physics and all collision checks. Improve state restoration and installation rollback; remove obsolete diagnostics from the package.
+- Integrated ZoneFPV settings into the native PDA, including controller selection/calibration, press-to-bind keyboard/mouse/controller/CH assignments, General settings and OSD editing. External F6 remains available; both menus share preferences.
+- Reorganized settings into Flight, Image, Equipment, World and signal, and Settings. Long lists scroll vertically. Relevant combat options appear for the selected drone type.
+- Added an OSD preview with mouse selection/dragging, a vertical list of all 14 indicators, drone HP, artifact detector and remaining grenade charges. Normal and lower-camera crosshairs can be enabled and styled separately.
+- Added a body-mounted lower camera, assignable flashlight, selectable night/infrared/thermal vision and analog camera effects. Every assigned action offers Toggle/Hold; held grenade release repeats at intervals and artifact collection retries on approach.
+- Added kamikaze, grenade-drop and combined drones. Configure impact power/speed, RGD-5/F-1 grenades and 1–20 or unlimited charges. Grenades are prepared before release; the impact threshold allows gentle landing.
+- Added artifact collection with configurable reach, simulated signal loss and world/anomaly scanning. Scanner projection follows the current FPV camera each frame, with complete alternating packets and stale/invalid-target rejection.
+- Improved controller hotplug handling, input/focus restoration, effect cleanup and bounded runtime work. Achievement compatibility is retained.
 
-The Rendering menu also offers optional manual `gc.MaxObjectsInGame` input, **Save to Engine.ini** and **Game default**. This is the game's startup object-capacity setting: changes affect the whole game after a full restart. Existing Engine.ini is backed up before a requested change, and unrelated settings are preserved. Higher capacity can increase RAM use, loading time and garbage collection pauses. Installation/startup do not change it automatically. See [OBJECT_LIMIT.md](https://github.com/mrwinka/ZoneFPV/blob/main/OBJECT_LIMIT.md).
+## Latest v58 corrections
 
-Known limitations: the black anomaly effect near CNPP remains unresolved, and checkpoint quest fog is unchanged. Unloaded geometry and missing collision remain possible. Higher loading multipliers can reduce FPS and increase RAM use. Actual startup object capacity has not been verified, and no numerical FPS improvement is claimed.
+- Retain bounded retries for living NPCs whose mesh, world or root becomes ready after the initial discovery window.
+- Validate identity and ownership through the entire equipment attachment chain before changing/restoring visibility. Stop writing to descendants when an ancestor changes owner or identity.
+- Retain the original player movement-component tick state and read-only NPC residency diagnostics introduced in v57.
 
-Install with the game closed: extract the full ZIP and run **Setup.cmd**. Existing preferences are preserved. **F6** opens the menu, **F8** toggles FPV and **F9** resets. [Installation and troubleshooting (EN/RU)](https://github.com/mrwinka/ZoneFPV/blob/main/SITE_INSTALL.md) · [Full changelog](https://github.com/mrwinka/ZoneFPV/blob/main/CHANGELOG.md)
+## Verification and remaining limits
+
+All 66 Lua suites passed; 139 Lua source/test files passed syntax checks. Installed runtime files were hash-verified. The existing v55 input/overlay helper and v51 native DLL are reused without a new binary build.
+
+**`gameplay_verified=false`: the latest corrections were reviewed and tested offline. NPC disappearance and scanner recovery in a live game are not claimed fixed or fully verified.** No measured FPS improvement is claimed. Unloaded collision/remote simulation and the known CNPP regional effect remain limitations.
+
+Close the game, extract the complete attached ZIP and run **Setup.cmd**. Compatible UE4SS is required separately. Updates preserve preferences and create a backup. F6 opens settings, F8 toggles FPV and F9 returns to launch by default; these keys can be reassigned. On GitHub, download the attached installer ZIP, not the automatic Source code archive.
+
+[Installation (EN/RU)](https://github.com/mrwinka/ZoneFPV/blob/main/SITE_INSTALL.md) · [Source](https://github.com/mrwinka/ZoneFPV) · [Nexus Mods](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
 
 ## Русский
 
-**ZoneFPV 0.2.0 — стабильный выпуск от 3 октября 2026.** Автор проверил сборку в игре. Полный архив содержит установщик, нативный помощник, исходники и лицензии. Совместимый UE4SS нужно установить отдельно.
+Экспериментальный предварительный выпуск на основе 0.2.0. Включает накопленные изменения 0.3.0 и последние офлайн-исправления сканера и проверки видимости.
 
-По сравнению с RC3:
+- Все настройки встроены в КПК: пульт и калибровка, назначение произвольных кнопок/CH, общие настройки и редактор OSD. F6 остаётся доступным; настройки общие.
+- Пять понятных групп, вертикальная прокрутка и параметры боевого режима по выбранному типу дрона.
+- OSD с выбором и перетаскиванием мышью, списком всех 14 показателей, HP, детектором и боезапасом. Прицелы обычной и нижней камеры настраиваются отдельно.
+- Нижняя камера вращается вместе с дроном; добавлены фонарик, ночное/инфракрасное/тепловизионное видение и эффекты аналога. Все назначения поддерживают переключение/удержание, включая интервальный сброс и сбор по мере приближения.
+- Камикадзе, сброс гранат и совмещённый режим; мощность/порог удара, RGD-5/F-1 и 1–20 либо неограниченное количество зарядов. Добавлены сбор артефактов с регулируемой дистанцией, симуляция сигнала и сканирование мира.
+- Рамки сканера рассчитываются по текущей камере; устаревшие/некорректные цели и неполные пакеты отбрасываются. Улучшены подключение пульта, возврат управления/фокуса и очистка эффектов. Совместимость с достижениями сохранена.
 
-- Основной FPV теперь выбран по умолчанию; к альтернативному режиму добавлено объяснение. Усилены простые и сложные проверки столкновений сферой с использованием канала трассировки и профиля игрока.
-- Во время FPV скрываются игрок, оружие, тень и субтитры; после выхода восстанавливается сохранённое состояние игрока и интерфейса. NPC и мутанты не обнаруживают игрока в FPV, но продолжают сражаться друг с другом.
-- Смена погоды/времени сохраняет положение дрона. Заморозка мира оставляет FPV рабочим; закрытие F6 и потеря фокуса игры не выключают FPV.
-- Добавлены равномерные множители подгрузки геометрии от 1× до 5× для всех десяти исходных сеток. При выходе возвращаются исходные настройки.
-- Добавлен профиль DualShock 4 DirectInput; проверка на физическом DS4 ещё не выполнена.
-- При переходе в FPV сохраняются дождь, падающие листья и вороны. Если игра заменяет компоненты частиц, используется ограниченный повторный поиск.
-- Окна F6 и настроек OSD можно растягивать и разворачивать. Размер сохраняется, элементы и шрифты масштабируются. Предпросмотр OSD учитывает пропорции игрового окна и не меняет сохранённые позиции элементов.
-- Игровой HUD возвращается сразу после выхода из FPV; открывать и закрывать настройки через Esc больше не требуется.
-- Сокращена повторная работа физики, камеры, интерфейса, звука и частиц при сохранении физики 240 Гц и всех проверок столкновений. Улучшены восстановление состояния и откат неудачной установки; устаревшая диагностика исключена из пакета.
+В v58 сканер продолжает ограниченно ждать позднюю загрузку NPC. Проверка видимости учитывает владельца и личность каждого звена снаряжения; после передачи родителя NPC записи в дочерние объекты прекращаются. Исходное обновление компонента движения игрока и диагностика v57 сохранены.
 
-В меню «Прорисовка» также доступен необязательный ручной ввод `gc.MaxObjectsInGame`, сохранение в Engine.ini и возврат к настройкам игры. Это лимит объектов движка при запуске: изменение действует на всю игру после полного перезапуска. Перед изменением существующий Engine.ini резервируется, посторонние настройки сохраняются. Повышение лимита может увеличить расход RAM, время загрузки и паузы очистки памяти. Установка и обычный запуск не меняют параметр автоматически. [Подробнее о лимите объектов](https://github.com/mrwinka/ZoneFPV/blob/main/OBJECT_LIMIT.md).
+Все 66 Lua-наборов и проверка синтаксиса 139 файлов прошли; установленная сборка сверена по хешам. **`gameplay_verified=false`: исчезновение моделей NPC и восстановление сканера в самой игре ещё не подтверждены.** Численный прирост FPS не заявляется.
 
-Известные ограничения: чёрный эффект аномалии у ЧАЭС не исправлен; квестовый туман у КПП оставлен. Неподгруженная геометрия и отсутствующие коллизии остаются возможными. Большой множитель может снизить FPS и увеличить расход RAM. Фактическая ёмкость объектов после запуска не подтверждена; численный прирост FPS не заявляется.
-
-Установка при закрытой игре: распаковать полный ZIP → **Setup.cmd**. Настройки сохраняются. **F6** — меню, **F8** — переключение FPV, **F9** — сброс. [Установка и устранение неполадок (EN/RU)](https://github.com/mrwinka/ZoneFPV/blob/main/SITE_INSTALL.md) · [Журнал изменений](https://github.com/mrwinka/ZoneFPV/blob/main/CHANGELOG.md)
+Обновлять при закрытой игре: распаковать полный приложенный ZIP → **Setup.cmd**. UE4SS устанавливается отдельно. Настройки сохраняются, создаётся резервная копия.

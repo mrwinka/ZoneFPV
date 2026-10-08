@@ -9,7 +9,7 @@ function M.set(s,enabled,gameplay)
   gameplay:SetGlobalTimeDilation(s.pc,0.0001)
   s.freezeOwned=true
  elseif not enabled and (s.freezeOwned or s.freezePrepared) then
-  gameplay:SetGlobalTimeDilation(s.pc,s.previousDilation)
+  gameplay:SetGlobalTimeDilation(s.world or s.pc,s.previousDilation)
   s.freezeOwned=false;s.freezePrepared=false
  end
 end

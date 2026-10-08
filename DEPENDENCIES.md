@@ -1,32 +1,11 @@
-# Requirements / dependencies
+# Dependencies / Зависимости
 
-- Windows 10/11 x64 and the PC version of S.T.A.L.K.E.R. 2.
-- A game-version-compatible UE4SS runtime and loader installed in `Stalker2/Binaries/Win64/ue4ss`.
-- A transmitter in USB Joystick mode or gamepad exposed through DirectInput, XInput or WinMM.
+- Windows 10/11 x64 and PC S.T.A.L.K.E.R. 2.
+- A UE4SS runtime/loader compatible with your exact game version, installed under `Stalker2/Binaries/Win64/ue4ss`.
+- A transmitter in USB Joystick mode or a gamepad exposed through DirectInput, XInput or WinMM.
 
-ZoneFPV's installer copies only its own mod. UE4SS, proxy DLLs, engine signatures and compatibility patches are not bundled or replaced. The input helper is statically linked; end users do not need Visual Studio or Python.
+UE4SS is distributed separately: [upstream](https://github.com/UE4SS-RE/RE-UE4SS) and [releases](https://github.com/UE4SS-RE/RE-UE4SS/releases). Follow the compatibility instructions for your game version. This release does not bundle runtime loaders, signatures, compatibility patches or game assets. Do not combine unrelated runtime fixes.
 
-## Game-thread compatibility
+Setup configures EngineTick dispatch, `HookEngineTick=1` and `HookUObjectProcessEvent=0`, backing up existing settings when changed. UE4SS binaries are not replaced. The helper is statically linked: end users do not need Visual Studio or Python. Borderless/windowed play is recommended for the native OSD. Hardware profiles are starting mappings, not device certification.
 
-ZoneFPV 0.2.0 (and RC3/RC4) uses the one-argument `ExecuteInGameThread(callback)` API and respects UE4SS's configured default, including **EngineTick**. It does not force ProcessEvent, change hooks on dispatch failure or edit UE4SS settings.
-
-The original RC2 explicitly requested ProcessEvent. A reporter's game 2.0.6 / UE4SS `527a483b` setup with [compatibility package 2810](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2810) required EngineTick. The reporter subsequently confirmed RC3 worked without the reported freezes. Keep the settings required by the runtime for your exact game version; do not change them to ProcessEvent as a ZoneFPV workaround.
-
-## Runtime links
-
-- [UE4SS upstream](https://github.com/UE4SS-RE/RE-UE4SS)
-- [UE4SS releases](https://github.com/UE4SS-RE/RE-UE4SS/releases)
-- [Legacy STALKER 2 compatibility fix](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2341): use only for game versions explicitly supported on that page.
-
-Different game updates can need different runtime builds, settings or signatures. These links are not instructions to combine all compatibility fixes. Existing working installations do not need their runtime replaced just to update ZoneFPV.
-
-## Controllers and display
-
-Eight DirectInput axes (including sliders) are supported. Initial profiles include Xbox, DualSense, DualShock 4 and several radio layouts. USB/Bluetooth, adapters, Steam Input and custom radio channel mappings can expose different devices/axes; select one interface and verify directions. Physical DualShock 4 testing is pending.
-
-Borderless/windowed play is recommended for the native OSD. The bridge uses background/nonexclusive input. Game focus changes pause FPV controls/audio without ending the session; stale or disconnected input still ends FPV.
-
-## Ограничения совместимости
-
-Нужен UE4SS именно для вашей версии игры. ZoneFPV 0.2.0 (как и RC3/RC4) соблюдает выбранный в нём метод игрового потока, включая EngineTick; настройки UE4SS не меняются. Старый патч 2341 подходит только для версий игры, перечисленных на его странице. Готовые профили контроллеров требуют проверки направлений; настоящий DS4 ещё не проверен.
-
+Требуются Windows x64, игра и совместимый с её версией UE4SS. Пульт подключается в режиме USB Joystick. Среда UE4SS устанавливается отдельно, её бинарные файлы/патчи в архиве отсутствуют. Установщик настраивает EngineTick и сохраняет резервную копию изменённых параметров. Python и Visual Studio для запуска не нужны.

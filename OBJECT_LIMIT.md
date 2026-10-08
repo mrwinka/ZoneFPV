@@ -4,7 +4,7 @@
 
 `gc.MaxObjectsInGame` is the configured maximum number of Unreal objects for the game, including actors, components and resources. It is not a number of NPCs and not an FPS multiplier. More object capacity can allow additional world loading; more resident objects may consume more RAM and make streaming or garbage collection slower. A small value can prevent the game from starting. Raising the limit does not fix leaks or guarantee that 5× streaming fits the available memory.
 
-1. F6 → **Rendering** → enter a positive whole number for `gc.MaxObjectsInGame` (no separators; for example `1200000`).
+1. PDA/F6 → **Settings → General** → enter a positive whole number for `gc.MaxObjectsInGame` (no separators; for example `1200000`).
 2. Choose **Save to Engine.ini**. This stores the requested value; it does not resize the running game's object array.
 3. Fully close and restart the game before testing. Whether this game build accepts the stored startup override still needs in-game confirmation.
 4. **Game default** removes only this key; restart again. Other Engine.ini settings are retained. If a previous custom value was needed, restore it manually or use the adjacent backup.
@@ -31,7 +31,7 @@ These commands change only the stored configuration; restart the game. The field
 
 `gc.MaxObjectsInGame` — заданный максимум Unreal-объектов всей игры: игровых акторов, компонентов и ресурсов. Это не число NPC и не множитель FPS. Повышение даёт запас для подгрузки мира; дополнительные загруженные объекты могут увеличить расход RAM, время загрузки и паузы очистки памяти. Слишком малое число может привести к крашу при запуске. Повышение лимита не исправляет утечки и не гарантирует, что прорисовка 5× поместится в память.
 
-1. **F6 → «Прорисовка»** → впиши целое положительное число без разделителей, например `1200000`.
+1. **КПК/F6 → «Настройки → Общие»** → впиши целое положительное число без разделителей, например `1200000`.
 2. Нажми **«Сохранить в Engine.ini»**. Это сохраняет значение для следующего запуска; действующий массив объектов не расширяется.
 3. Полностью закрой и перезапусти игру, затем повтори маршрут теста. Применение параметра этой сборкой игры ещё нужно подтвердить.
 4. **«По умолчанию»** удаляет только этот ключ; требуется повторный перезапуск. Остальные настройки остаются. Если раньше был нужен собственный лимит, верни его вручную или из резервной копии.

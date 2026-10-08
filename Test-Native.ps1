@@ -4,7 +4,7 @@ if(!(Test-Path -LiteralPath $vswhere)){throw 'Visual Studio C++ Build Tools requ
 $vs=& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 if(!$vs){throw 'MSVC x64 compiler not installed.'}
 $vcvars=Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
-$build=Join-Path $PSScriptRoot 'build\native-tests'
+$build=Join-Path $PSScriptRoot ('build\native-tests-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $build -Force | Out-Null
 $commands=@"
 @echo off
@@ -34,6 +34,8 @@ if not "%errorlevel%"=="0" exit /b 1
 "@
 $batch=Join-Path $build 'test.cmd'
 [IO.File]::WriteAllText($batch,$commands,[Text.Encoding]::Default)
-& $batch
-if($LASTEXITCODE -ne 0){throw 'Native tests failed.'}
+$compilerOutput=& $batch 2>&1
+$compilerExit=$LASTEXITCODE
+$compilerOutput | Write-Output
+if($compilerExit -ne 0 -or ($compilerOutput -join "`n") -match '(?i)\b(error|ошибка)\s+C\d{4}\b'){throw 'Native compilation or tests failed.'}
 Write-Output 'PASS native controller profiles/calibration, OSD layout/font, object-limit config and resizable menu/OSD editor tests'

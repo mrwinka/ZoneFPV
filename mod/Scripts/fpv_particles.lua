@@ -10,12 +10,34 @@ end
 local leafPath='/Game/_Stalker_2/VFX/Player/NS_Leaves_Player.NS_Leaves_Player'
 allowed[leafPath]=true
 local function read(o,k) local ok,v=pcall(function()return o[k]end);if ok then return v end;return nil end
+local function invoke(o,k,...)
+    return o[k](o,...)
+end
 local function call(o,k,...)
-    local args={...};local ok,v=pcall(function()return o[k](o,table.unpack(args))end)
+    local ok,v=pcall(invoke,o,k,...)
     if ok then return v end
     return nil
 end
 local function valid(o) return call(o,'IsValid')==true end
+local function address(o) return valid(o) and call(o,'GetAddress') or nil end
+local function assets(g,resolveMissing)
+    local found={}
+    for path in pairs(allowed) do
+        local object=g.assets[path]
+        if not valid(object) and resolveMissing then
+            local ok,value=pcall(StaticFindObject,path)
+            object=ok and value or nil;g.assets[path]=object
+        end
+        local id=address(object)
+        if id then found[id]=path end
+    end
+    return found
+end
+local function measured(g,key,started)
+    local elapsed=((M.clock or os.clock)()-started)*1000
+    g.performance[key..'Ms']=elapsed
+    g.performance[key..'MaxMs']=math.max(g.performance[key..'MaxMs'] or 0,elapsed)
+end
 local function kind(o) return call(o,'type') or type(o) end
 local function finite(v) return type(v)=='number' and v==v and math.abs(v)<math.huge end
 local function name(v)
@@ -31,8 +53,8 @@ local function signature(v)
     if finite(index) and index>=0 and index%1==0 then return 'index:'..index end
     for _,field in ipairs({'TypeDef','TypeDef_DEPRECATED'}) do
         local object=read(read(v,field),'ClassStructOrEnum')
-        local full=call(object,'GetFullName')
-        if type(full)=='string' and full~='' then return full end
+        local id=address(object)
+        if id then return 'object:'..tostring(id) end
     end
 end
 local function count(a)
@@ -305,32 +327,63 @@ local function sync(e,position)
         end
     end
 end
-local function discover(s,components,entries)
-    local candidates={};local checked=0
+local function discover(g,s,components,entries)
+    local started=(M.clock or os.clock)()
+    local candidates={};local checked=0;local sources={};local sourceAssets={};local newAsset=false
+    -- Resolve only known templates. UObject/FField name conversion traverses
+    -- native outer chains, so it must never identify live particle providers.
+    local pawnId=address(s.pawn)
+    if not pawnId then return candidates end
     for _,entry in pairs(components) do
         checked=checked+1;if checked>64 then break end
         local c=entry.object
-        if valid(c) and entry.flags.bVisible==true and name(call(call(c,'GetClass'),'GetFName'))=='DynamicEnvironmentNiagaraComponent' then
-            local owner=call(c,'GetOwner');local asset=call(c,'GetAsset')
-            local full=valid(asset) and call(asset,'GetFullName')
-            local path=type(full)=='string' and full:match('(/Game/[^%s]+)')
-            path=path and path:gsub(':','.')
-            if allowed[path] and valid(owner) and owner:GetAddress()==s.pawn:GetAddress() then
-                local existing=entries[path]
-                local retained=existing and valid(existing.source) and existing.source:GetAddress()==c:GetAddress()
-                    and existing.assetId==asset:GetAddress()
-                local active=call(c,'IsActive')==true
-                local selected=candidates[path]
-                local score=(active and 2 or 0)+(retained and 1 or 0)
-                -- Several native components can use the same template. Choose
-                -- once per discovery; never destroy a running mirror for every
-                -- duplicate encountered in an unordered component collection.
-                if not selected or score>selected.score then
-                    candidates[path]={source=c,asset=asset,score=score}
+        if valid(c) and entry.flags.bVisible==true then
+            local owner=call(c,'GetOwner')
+            if address(owner)==pawnId then
+                local asset=call(c,'GetAsset');local assetId=address(asset)
+                if assetId then
+                    sourceAssets[assetId]=true
+                    if not (g.known and g.known[assetId]) and not (g.sourceAssets and g.sourceAssets[assetId]) then
+                        newAsset=true
+                    end
+                    sources[#sources+1]={source=c,asset=asset,id=assetId}
                 end
             end
         end
     end
+    -- StaticFindObject traverses the global UObject collection when a fixed
+    -- path is absent. Repeating these missing rain/lightning lookups on every
+    -- component scan adds global searches to flight callbacks. Try at entry,
+    -- then when a newly observed native template may have loaded. Permit one
+    -- follow-up for lookup registration lag, never continuous missing-path
+    -- polling. The previous source
+    -- set is bounded by the same 64-component inspection cap.
+    local lookupStarted=(M.clock or os.clock)()
+    local known=assets(g,not g.assetsResolved or newAsset or g.retryMissing)
+    g.retryMissing=false
+    if newAsset then
+        for id in pairs(sourceAssets) do if not known[id] then g.retryMissing=true;break end end
+    end
+    g.assetsResolved=true;g.sourceAssets=sourceAssets;g.known=known
+    measured(g,'lookup',lookupStarted)
+    for _,item in ipairs(sources) do
+        local c,asset=item.source,item.asset;local path=known[item.id]
+        if path then
+            local existing=entries[path]
+            local retained=existing and valid(existing.source) and existing.source:GetAddress()==c:GetAddress()
+                and existing.assetId==asset:GetAddress()
+            local active=call(c,'IsActive')==true
+            local selected=candidates[path]
+            local score=(active and 2 or 0)+(retained and 1 or 0)
+            -- Several native components can use the same template. Choose
+            -- once per discovery; never destroy a running mirror for every
+            -- duplicate encountered in an unordered component collection.
+            if not selected or score>selected.score then
+                candidates[path]={source=c,asset=asset,score=score}
+            end
+        end
+    end
+    measured(g,'discovery',started)
     return candidates
 end
 function M.update(s,now,root,log)
@@ -338,8 +391,8 @@ function M.update(s,now,root,log)
     if not visibility or not valid(s.camera) then return end
     local g=s.fpvParticles
     if not g then
-        g={root=root,entries={},failed={},report={},nextUpdate=0,nextParameters=0};s.fpvParticles=g
-        report(g,'Camera weather mirror v9 initialized; waiting for native environmental components',log)
+        g={root=root,entries={},assets={},failed={},report={},performance={},nextUpdate=0,nextParameters=0};s.fpvParticles=g
+        report(g,'Camera weather mirror v11 initialized; cached template discovery, waiting for native environmental components',log)
         if M.worldLeaves then M.worldLeaves.start(s,root,log,now) end
     end
     if g.disabled or now<g.nextUpdate then return end
@@ -348,11 +401,11 @@ function M.update(s,now,root,log)
         g.library=StaticFindObject('/Script/Niagara.Default__NiagaraFunctionLibrary')
         if not valid(g.library) then g.disabled=true;report(g,'Niagara library unavailable',log);return end
     end
-    -- Reuse the existing once/second pawn component discovery; never enumerate
+    -- Reuse the existing bounded pawn component discovery; never enumerate
     -- world objects or find the player controller in a particle callback.
     if g.scanStamp~=visibility.nextScan then
         g.scanStamp=visibility.nextScan
-        local candidates=discover(s,visibility.components,g.entries)
+        local candidates=discover(g,s,visibility.components,g.entries)
         for path,candidate in pairs(candidates) do
             local c,asset=candidate.source,candidate.asset;local e=g.entries[path]
             if e and (e.assetId~=asset:GetAddress() or not valid(e.clone)) then
@@ -402,6 +455,7 @@ function M.update(s,now,root,log)
     local pos=s.flight and s.flight.p
     if not pos then return end
     local position={X=pos.x*100,Y=pos.y*100,Z=pos.z*100}
+    local copyStarted=(M.clock or os.clock)()
     for path,e in pairs(g.entries) do
         local retired=false
         local ok,err=pcall(function()
@@ -461,6 +515,7 @@ function M.update(s,now,root,log)
             report(g,path..(retired and ' retired: ' or ' disabled: ')..tostring(err),log)
         end
     end
+    measured(g,'copy',copyStarted)
     if M.worldLeaves then M.worldLeaves.update(s,now,log) end
 end
 function M.restore(s)

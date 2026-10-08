@@ -2,16 +2,24 @@ local M=dofile('mod/Scripts/leaf_world_visibility.lua')
 local rawOpen=io.open
 io.open=function()return {write=function()end,close=function()end}end
 local scans=0
-StaticFindObject=function()return nil end
+local assets,lodFunction,lodArity={}
+StaticFindObject=function(path)
+    if path=='/Script/Niagara.NiagaraComponent:SetPreviewLODDistance' then return lodFunction end
+    assert(path:match('^/Game/_Stalker_2/VFX/'),'only fixed asset paths may be resolved')
+    return assets[path]
+end
 local function object(t)
     t=t or {}
     function t:IsValid()return not self.invalid end
-    function t:GetAddress()return self end
+    function t:GetAddress()assert(not self.invalid,'expired UObject address read');return self end
+    function t:GetFullName()error('live UObject/FField name conversion forbidden')end
     return t
 end
 local function asset(name)
     local folder=name=='NS_Character_Crow' and '/Game/_Stalker_2/VFX/Player/' or '/Game/_Stalker_2/VFX/Environment/Leaves/'
-    return object({GetFullName=function()return 'Object '..folder..name..':'..name end})
+    local path=folder..name..'.'..name
+    if not assets[path] then assets[path]=object() end
+    return assets[path]
 end
 local function setup()
     local world=object();local s={world=world,pawn=object(),origin={x=10,y=20,z=30}}
@@ -88,9 +96,7 @@ s,c=setup();local crow=c('NS_Character_Crow')
 local originalOwner,originalPosition,originalAsset=crow.owner,crow.position,crow.asset
 local crowOthers={c('NS_Character_Crow',object()),c('NS_Character_Crow',s.world,s.pawn),
     c('NS_Character_Crow',nil,nil,{X=30000,Y=2000,Z=3000}),c('NS_Character_Crow_Land')}
-local wrongFolder=c('NS_Character_Crow');wrongFolder.asset=object({GetFullName=function()
-    return 'Object /Game/_Stalker_2/VFX/Environment/Leaves/NS_Character_Crow:NS_Character_Crow'
-end});crowOthers[#crowOthers+1]=wrongFolder
+local wrongFolder=c('NS_Character_Crow');wrongFolder.asset=object();crowOthers[#crowOthers+1]=wrongFolder
 list({crow,table.unpack(crowOthers)});local crowScans=scans;M.start(s,'mock/',nil,0)
 assert(s.worldLeaves.counts.crows==1 and s.worldLeaves.counts.leaves==0 and not crow.scalability and crow.localPlayer)
 s.flight={p={x=10,y=20,z=70}};M.update(s,5);crow.active=false;M.update(s,15);M.update(s,20)
@@ -135,22 +141,18 @@ end
 print('PASS partial crow setter rollback and owner/world/asset identity cleanup')
 
 local function lodApi(fields)
-    StaticFindObject=function(name)
-        assert(name=='/Script/Niagara.NiagaraComponent:SetPreviewLODDistance')
-        return object({ForEachProperty=function(_,fn)
-            for _,field in ipairs(fields or {'BoolProperty bEnablePreviewLODDistance','FloatProperty PreviewLODDistance'})do
-                local kind,key=field:match('^(%S+) (%S+)$')
-                if fn({GetFullName=function()return kind..' /Script/Niagara.NiagaraComponent:SetPreviewLODDistance.'..key end})then break end
-            end
-        end})
-    end
+    lodArity=fields and #fields or 2
+    lodFunction=object({ForEachProperty=function()error('live FField iteration forbidden')end})
 end
 local function preview(o,enabled,distance)
     o.previewEnabled=enabled;o.previewDistance=distance;o.lodWrites=0
     function o:GetPreviewLODDistanceEnabled()return self.previewEnabled end
     function o:GetPreviewLODDistance()return self.previewDistance end
     function o:SetPreviewLODDistance(v,d)
+        -- UE4SS checks UFunction argument count before native ProcessEvent.
+        assert(lodArity==2,'UFunction argument count mismatch')
         self.previewEnabled=v;self.previewDistance=d;self.lodWrites=self.lodWrites+1
+        if self.misreadLod and v then self.previewDistance=d+100 end
         if self.failLodOnce then self.failLodOnce=false;error('partially applied LOD setter')end
     end
 end
@@ -177,6 +179,15 @@ list({near});M.start(s,'mock/',nil,0);M.update(s,20);assert(near.lodWrites==1)
 M.restore(s);assert(near.previewEnabled and near.previewDistance==456 and near.scalability and not near.localPlayer)
 print('PASS partial LOD failure stops retries and still restores all owned state')
 
+lodApi();s,c=setup();near=c('NS_GroundLeaves_2');preview(near,false,321);near.misreadLod=true
+list({near});M.start(s,'mock/',nil,0)
+assert(near.lodWrites==2 and not near.previewEnabled and near.previewDistance==321,
+    'inconsistent successful setter must immediately restore the snapshot')
+M.update(s,20);assert(near.lodWrites==2 and not near.scalability and near.localPlayer,
+    'failed readback stops only LOD retries and preserves native particle density')
+M.restore(s);assert(not near.previewEnabled and near.previewDistance==321 and near.scalability and not near.localPlayer)
+print('PASS native LOD readback mismatch restores immediately and stops further attempts')
+
 for _,value in ipairs({math.huge,0/0})do
     s,c=setup();near=c('NS_GroundLeaves_2');preview(near,false,value)
     list({near});M.start(s,'mock/',nil,0);M.update(s,20);M.restore(s);assert(near.lodWrites==0)
@@ -184,4 +195,23 @@ end
 s,c=setup();near=c('NS_GroundLeaves_2');preview(near,false,50);near.GetPreviewLODDistanceEnabled=nil
 list({near});M.start(s,'mock/',nil,0);M.update(s,20);M.restore(s);assert(near.lodWrites==0)
 print('PASS missing getters and nonfinite snapshots cannot enable native LOD override')
+lodApi();s,c=setup()
+local effects={c('NS_GroundLeaves_1'),c('NS_GroundLeaves_2'),c('NS_GroundLeaves_3'),
+ c('NS_Character_Crow'),c('NS_Character_Crow'),c('NS_Character_Crow')}
+for _,effect in ipairs(effects)do preview(effect,false,321)end
+list(effects);M.start(s,'mock/',nil,0)
+assert(#s.worldLeaves.entries==6)
+s.flight={p={x=30,y=20,z=30}}
+local function lodWrites()
+ local sum=0;for _,effect in ipairs(effects)do sum=sum+effect.lodWrites end;return sum
+end
+local initial=lodWrites()
+for i=1,30 do
+ local before=lodWrites();M.update(s,i*.1)
+ assert(lodWrites()-before<=1,'one update may not synchronize all six native particle effects')
+end
+assert(lodWrites()==initial+6,'every supported native effect still follows camera distance')
+M.restore(s)
+for _,effect in ipairs(effects)do assert(not effect.previewEnabled and effect.previewDistance==321)end
+print('PASS native particle LOD changes are spread across frames and all snapshots restore')
 io.open=rawOpen

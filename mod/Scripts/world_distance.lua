@@ -26,13 +26,21 @@ local function gridRanges(s,log)
    if hash:IsValid() then
     local world=hash:GetWorld()
     if world and world:IsValid() and world:GetAddress()==s.world:GetAddress() then
-     hash.StreamingGrids:ForEach(function(_,ref)
-      local grid=ref:get();local name=grid.GridName:ToString()
+     local grids=hash.StreamingGrids
+     local count=grids:GetArrayNum()
+     assert(type(count)=='number' and count%1==0 and count>=0 and count<=64,'invalid streaming-grid array')
+     for i=1,count do
+      local grid=grids[i]
+      if type(grid)=='userdata' then
+       local kind=grid:type()
+       if kind=='RemoteUnrealParam' or kind=='LocalUnrealParam' then grid=grid:get() end
+      end
+      local name=grid.GridName:ToString()
       if type(grid.LoadingRange)=='number' and grid.LoadingRange>0 then
        ranges[name:lower()]=grid.LoadingRange
        log('World grid baseline: '..name..'='..grid.LoadingRange)
       end
-     end)
+     end
     end
    end
   end
@@ -40,8 +48,28 @@ local function gridRanges(s,log)
  if not ok then log('World grid baselines unavailable: '..tostring(err))end
  return ranges
 end
-function M.update(s,system,v,log)
+local function staged(s,v,now,limited,sample,log)
+ local ramp=s.distanceRamp
+ if not ramp then ramp={selection=0,next=now+3};s.distanceRamp=ramp end
+ if limited and v>0 then
+  if not ramp.limited then
+   log('World distance protection: selected '..scales[v+1]..'x retained; native ranges restored (commit='..tostring(sample and sample.commit or 'unknown')..' MB; UObject high-water='..tostring(sample and sample.used or 'unknown')..')')
+  end
+  ramp.limited=true;ramp.selection=0;ramp.next=now+3
+  return 0
+ end
+ if ramp.limited then
+  ramp.limited=false;log('World distance protection cleared; resuming gradual increase')
+ end
+ if v<ramp.selection then ramp.selection=v;ramp.next=now+3
+ elseif v>ramp.selection and now>=ramp.next then
+  ramp.selection=ramp.selection+1;ramp.next=now+3
+ end
+ return ramp.selection
+end
+function M.update(s,system,v,log,now,limited,sample)
  if not scales[v+1] then return end
+ if type(now)=='number' then v=staged(s,v,now,limited,sample,log) end
  if not s.worldDistance then
   if v==0 then return end
   s.worldDistance={original={},selection=-1,system=system,ranges=gridRanges(s,log)}
@@ -73,6 +101,7 @@ function M.update(s,system,v,log)
  log('World distance verified grids='..changed..'; multiplier='..scales[v+1])
 end
 function M.restore(s,log)
+ s.distanceRamp=nil
  local g=s.worldDistance;if not g then return end
  for name,value in pairs(g.original) do
   local ok,err=pcall(set,g.system,s.pc,name,value)

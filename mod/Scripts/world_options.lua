@@ -1,5 +1,5 @@
 local M={}
-local allowed={freeze=true,alternate=true,god=true,hotstart=true}
+local allowed={freeze=true,alternate=true,noclip=true,god=true,hotstart=true}
 function M.load(root)
     local cfg={}
     for key in pairs(allowed) do
@@ -9,7 +9,7 @@ function M.load(root)
     end
     -- New preference intentionally defaults to the player-anchored mode.
     -- Do not interpret an old npcs=0 (the former default) as an opt-in.
-    cfg.npcs=not cfg.alternate
+    cfg.npcs=not cfg.alternate and not cfg.noclip
     return cfg
 end
 function M.save(root,cfg,key,enabled)
@@ -17,6 +17,6 @@ function M.save(root,cfg,key,enabled)
     local file=io.open(root..key..'-settings.txt','w');if not file then return false end
     local ok=file:write(enabled and '1\n' or '0\n');local closed=file:close()
     if not ok or not closed then return false end
-    cfg[key]=enabled;cfg.npcs=not cfg.alternate;return true
+    cfg[key]=enabled;cfg.npcs=not cfg.alternate and not cfg.noclip;return true
 end
 return M

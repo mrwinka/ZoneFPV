@@ -1,0 +1,20 @@
+local M=dofile('mod/Scripts/input_stall_guard.lua')
+local focus=dofile('mod/Scripts/focus_guard.lua')
+local guard=M.new()
+assert(not guard:pause(10,true),'old files without a live accepted controller may not extend flight')
+local sample={connected=true,focused=true,axes={65535,0,65535,0},seq=5,device=123,buttons=3}
+guard:accept(sample)
+assert(not guard:pause(10,false),'a stalled entire helper must retain the original watchdog')
+local held=guard:pause(10,true)
+assert(held.staleInput and held.paused and not held.focused and held.device==123 and sample.focused)
+local session={}
+local dt,paused=focus.delta(session,held,.4);assert(dt==0 and paused,'stale sticks must never advance flight')
+assert(guard:pause(10.749,true)and not guard:pause(10.75,true),'a repeated heartbeat cannot extend the bounded wait')
+local fresh={connected=true,focused=true,axes={32767,32767,0,32767},seq=8,device=123}
+guard:accept(fresh)
+dt,paused=focus.delta(session,fresh,.75);assert(dt==0 and not paused,'first resumed frame cannot integrate the paused gap')
+dt=focus.delta(session,fresh,.01);assert(dt==.01)
+assert(guard:pause(12,true));guard:clear();assert(not guard:pause(12.01,true))
+guard:accept({connected=false});assert(not guard:pause(13,true),'an explicit USB disconnect cannot receive a grace period')
+guard:accept(sample);assert(guard:pause(14,true));assert(not guard:pause(13,true),'clock rewind rejects frozen recovery')
+print('PASS controller snapshot delay: live heartbeat only, frozen controls,750ms bound, disconnect/helper-death/identity clear and zero-delta resume')
