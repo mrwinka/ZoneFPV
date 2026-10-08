@@ -6,11 +6,11 @@
 
 The release now has exactly three attachments: **ZoneFPV-0.3.0-RC1.zip**, **ZoneFPV-0.3.0-RC1-verification.json** and **SHA256SUMS.txt**. All were downloaded again and SHA-256 verified. Three obsolete attachments were deleted after explicit user confirmation. The installer contains 126 files, including 109 runtime files; SHA-256: `36d620a5c317650378862f66d97f697dabd048e3054d2a784e8907a5c67f2afb`.
 
-## Nexus — Optional file quarantined, Main update blocked
+## Nexus — Main and Primary, file quarantined
 
-[ZoneFPV on Nexus Mods](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) lists version **0.3.0-RC1**, with updated summary, full EN/RU description and changelog. File **20277**, **ZoneFPV 0.3.0 RC1 - Experimental prerelease**, uses the exact clean ZIP and still appears in **Optional Files**; the site displays 1.0 MB and 08 October 2026, 8:01 AM. Nexus returned **403** when saving the Main/primary/name change; it did not apply. The older stable file remains primary. The editor also returned 403 after a normal sign-out/sign-in. A Cloudflare CAPTCHA checkbox now blocks further editing; its completion is still pending. Manual download only. The original publication used the website; no API key or separate script was needed.
+[ZoneFPV on Nexus Mods](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) lists version **0.3.0-RC1**, with updated summary, full EN/RU description and changelog. File **20277** is named **ZoneFPV 0.3.0 RC1**, appears in **Main Files** beside the older versions and is selected as **Primary**. It uses the exact clean ZIP; the site displays 1.0 MB and 08 October 2026, 8:01 AM. Manual download only. These category/name/primary changes affect metadata only; the archive is unchanged. Publication used the website; no API key or separate script was needed.
 
-Nexus file 20277 currently displays **QUARANTINED** and cannot be downloaded. A Nexus download/hash comparison must wait until the file becomes available; no scan clearance or Nexus download verification is claimed. The GitHub installer is available meanwhile.
+Nexus file 20277 currently displays **QUARANTINED** and cannot be downloaded. Main/Primary placement does not clear the quarantine. A Nexus download/hash comparison must wait until the file becomes available; no scan clearance or Nexus download verification is claimed. The GitHub installer is available meanwhile.
 
 ## Validation and remaining checks
 

@@ -1,46 +1,71 @@
 # ZoneFPV 0.3.0 RC1
 
-Current release candidate based on 0.2.0. This release includes the accumulated 0.3.0 work and the latest offline scanner/visibility corrections. Full gameplay verification remains pending.
+The current release candidate for ZoneFPV. Older releases remain available.
 
-## Changes since 0.2.0
+## Added since 0.2.0
 
-- Integrated ZoneFPV settings into the native PDA, including controller selection/calibration, press-to-bind keyboard/mouse/controller/CH assignments, General settings and OSD editing. External F6 remains available; both menus share preferences.
-- Reorganized settings into Flight, Image, Equipment, World and signal, and Settings. Long lists scroll vertically. Relevant combat options appear for the selected drone type.
-- Added an OSD preview with mouse selection/dragging, a vertical list of all 14 indicators, drone HP, artifact detector and remaining grenade charges. Normal and lower-camera crosshairs can be enabled and styled separately.
-- Added a body-mounted lower camera, assignable flashlight, selectable night/infrared/thermal vision and analog camera effects. Every assigned action offers Toggle/Hold; held grenade release repeats at intervals and artifact collection retries on approach.
-- Added kamikaze, grenade-drop and combined drones. Configure impact power/speed, RGD-5/F-1 grenades and 1–20 or unlimited charges. Grenades are prepared before release; the impact threshold allows gentle landing.
-- Added artifact collection with configurable reach, simulated signal loss and world/anomaly scanning. Scanner projection follows the current FPV camera each frame, with complete alternating packets and stale/invalid-target rejection.
-- Improved controller hotplug handling, input/focus restoration, effect cleanup and bounded runtime work. Achievement compatibility is retained.
+- **Settings inside the PDA.** The F6 settings menu is duplicated in PDA → ZoneFPV. Controller setup, calibration and button assignments open inside the PDA. Both menus use the same saved preferences.
+- **Kamikaze drone.** Detonate on impact above a configurable minimum impact speed. Adjust explosion power and set the threshold high enough to allow gentle landings.
+- **Grenade-drop drone.** Drop activated RGD-5 or F-1 grenades with an assigned button. Choose 1–20 grenades or unlimited ammunition; remaining charges are shown during flight.
+- **Combined combat mode.** Carry and drop grenades while retaining kamikaze impact detonation on the same drone. Combat settings are shown only when relevant to the selected drone type.
+- **Vision effects.** Select night/infrared-style modes such as Starlight IR, NIR, SWIR and IR LED, or thermal palettes such as White Hot, Black Hot, Rainbow and Ironbow. Toggle the chosen mode with an assigned button. Analog camera effects have their own switch.
+- **Lower camera.** Switch to a camera mounted under the drone to see directly below it. It rotates with the drone and can stay active only while an assigned button or CH is held.
+- **Drone flashlight.** Enable it in settings and switch it on or off with an assigned button.
+- **Artifact collection.** Pick up a nearby artifact from the drone with an assigned button. Collection distance is adjustable from 0.5 to 10 m. Holding the button retries collection as you approach an artifact.
+- **World scanner.** Display frames and distance markers for loaded NPCs, mutants and anomalies in the FPV view. Scanner visibility is configurable.
+- **Button assignments.** Capture the keyboard key, mouse button, controller button or CH you actually press. All assigned actions support Toggle or Hold; holding grenade release repeats drops at intervals.
+- **Controller setup.** Select a transmitter/gamepad, apply a profile and calibrate four flight axes. USB controllers can be connected while the game is running.
+- **Signal simulation.** Configure radio interference and signal loss caused by distance, obstacles and anomalies.
 
-## Latest corrections
+## Corrections and verification
 
-- Retain bounded retries for living NPCs whose mesh, world or root becomes ready after the initial discovery window.
-- Validate identity and ownership through the entire equipment attachment chain before changing/restoring visibility. Stop writing to descendants when an ancestor changes owner or identity.
-- Retain the original player movement-component tick state and read-only NPC residency diagnostics introduced in v57.
+Settings use vertically scrolling lists and five groups: Flight, Image, Equipment, World and signal, and Settings. Input/focus restoration and cleanup of player camera effects were revised. The latest scanner changes continue waiting for NPCs that load late; visibility restoration now checks that equipment still belongs to the same actor.
 
-## Verification and remaining limits
+66 Lua suites passed, 139 Lua files passed syntax checks, and installed runtime files were hash-verified. The existing helper and native binaries are reused; this publication does not add a new binary build. **gameplay_verified=false: NPC disappearance and scanner recovery in a live game have not yet been confirmed.** Unloaded geometry/collision, reduced remote simulation in Alternative FPV and the known CNPP regional camera effect remain limitations. NIR/SWIR are visual approximations, not spectral simulations.
 
-All 66 Lua suites passed; 139 Lua source/test files passed syntax checks. Installed runtime files were hash-verified. The existing v55 input/overlay helper and v51 native DLL are reused without a new binary build.
+## Installation
 
-**`gameplay_verified=false`: the latest corrections were reviewed and tested offline. NPC disappearance and scanner recovery in a live game are not claimed fixed or fully verified.** No measured FPS improvement is claimed. Unloaded collision/remote simulation and the known CNPP regional effect remain limitations.
+1. Install UE4SS compatible with your exact S.T.A.L.K.E.R. 2 PC update separately.
+2. Close the game, extract the complete **ZoneFPV-0.3.0-RC1.zip** archive into a writable folder and run **Setup.cmd**. Select the game folder if needed.
+3. Connect a transmitter in USB Joystick mode or a gamepad, start the game and load a save.
+4. Open **PDA → ZoneFPV** or press **F6**; select/calibrate the device in **Settings → Controller** and check stick directions.
+5. Lower throttle in Acro/Angle or center it in 3D before entering FPV. Defaults: **F6 settings, F8 enter/leave FPV, F9 return to launch**; all can be reassigned. Close settings/PDA to fly.
 
-Close the game, extract the complete attached ZIP and run **Setup.cmd**. Compatible UE4SS is required separately. Updates preserve preferences and create a backup. F6 opens settings, F8 toggles FPV and F9 returns to launch by default; these keys can be reassigned. On GitHub, download the attached installer ZIP, not the automatic Source code archive.
+Updates preserve preferences, calibration and the OSD layout, and create a backup of the previous mod. Download the attached installer ZIP rather than GitHub's automatic Source code archive. ZoneFPV does not bundle or replace UE4SS or other mods. End users do not need a compiler or Python. Vortex installation is not tested.
 
 [Installation (EN/RU)](https://github.com/mrwinka/ZoneFPV/blob/main/SITE_INSTALL.md) · [Source](https://github.com/mrwinka/ZoneFPV) · [Nexus Mods](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
 
 ## Русский
 
-Текущий кандидат в релиз на основе 0.2.0. Включает накопленные изменения 0.3.0 и последние офлайн-исправления сканера и проверки видимости.
+0.3.0 RC1 — текущий кандидат в релиз. Старые версии сохранены.
 
-- Все настройки встроены в КПК: пульт и калибровка, назначение произвольных кнопок/CH, общие настройки и редактор OSD. F6 остаётся доступным; настройки общие.
-- Пять понятных групп, вертикальная прокрутка и параметры боевого режима по выбранному типу дрона.
-- OSD с выбором и перетаскиванием мышью, списком всех 14 показателей, HP, детектором и боезапасом. Прицелы обычной и нижней камеры настраиваются отдельно.
-- Нижняя камера вращается вместе с дроном; добавлены фонарик, ночное/инфракрасное/тепловизионное видение и эффекты аналога. Все назначения поддерживают переключение/удержание, включая интервальный сброс и сбор по мере приближения.
-- Камикадзе, сброс гранат и совмещённый режим; мощность/порог удара, RGD-5/F-1 и 1–20 либо неограниченное количество зарядов. Добавлены сбор артефактов с регулируемой дистанцией, симуляция сигнала и сканирование мира.
-- Рамки сканера рассчитываются по текущей камере; устаревшие/некорректные цели и неполные пакеты отбрасываются. Улучшены подключение пульта, возврат управления/фокуса и очистка эффектов. Совместимость с достижениями сохранена.
+### Что добавилось по сравнению с 0.2.0
 
-В этом выпуске сканер продолжает ограниченно ждать позднюю загрузку NPC. Проверка видимости учитывает владельца и личность каждого звена снаряжения; после передачи родителя NPC записи в дочерние объекты прекращаются. Исходное обновление компонента движения игрока и диагностика v57 сохранены.
+- **Меню в КПК.** Меню настроек F6 продублировано в КПК → ZoneFPV. Настройка пульта, калибровка и назначение кнопок открываются прямо внутри КПК. Оба меню используют общие сохранённые параметры.
+- **Дрон-камикадзе.** Взрывается при столкновении, если скорость удара превышает заданный порог. Можно настроить мощность взрыва и минимальную скорость удара, чтобы оставить возможность мягкой посадки.
+- **Дрон со сбросом гранат.** Сбрасывает активированные RGD-5 или F-1 по назначенной кнопке. Боезапас — от 1 до 20 гранат либо неограниченный. Остаток зарядов отображается во время полёта.
+- **Совмещённый боевой режим.** Один дрон может сбрасывать гранаты и одновременно работать как камикадзе. В меню показываются только параметры, подходящие выбранному типу дрона.
+- **Эффекты видения.** Добавлены ночные/инфракрасные режимы Starlight IR, NIR, SWIR и IR LED, а также тепловизионные палитры, включая White Hot, Black Hot, Rainbow и Ironbow. Выбранное видение включается назначенной кнопкой. Эффект аналоговой камеры переключается отдельно.
+- **Нижняя камера.** Позволяет смотреть прямо под дроном и вращается вместе с его корпусом. Можно включать переключением или держать активной только пока зажата кнопка/CH.
+- **Фонарик дрона.** После включения возможности в настройках переключается назначенной кнопкой.
+- **Сбор артефактов.** Дрон подбирает ближайший артефакт по назначенной кнопке. Дистанция сбора регулируется от 0,5 до 10 м. При удержании кнопки сбор повторяется по мере приближения к артефакту.
+- **Сканирование мира.** В FPV отображаются рамки и расстояния до загруженных NPC, мутантов и аномалий. Отображение сканера настраивается.
+- **Назначение кнопок.** Закрепляется та клавиша, кнопка мыши, кнопка пульта/геймпада или CH, которую вы нажали. Для всех назначений доступны «Переключение» и «Пока зажата»; при удержании кнопки сброса гранаты сбрасываются с интервалом.
+- **Настройка пульта.** Выбор устройства, профили и калибровка четырёх осей управления. USB-пульт можно подключать во время работы игры.
+- **Симуляция связи.** Настраиваются помехи и потеря сигнала из-за расстояния, препятствий и аномалий.
 
-Все 66 Lua-наборов и проверка синтаксиса 139 файлов прошли; установленная сборка сверена по хешам. **`gameplay_verified=false`: исчезновение моделей NPC и восстановление сканера в самой игре ещё не подтверждены.** Численный прирост FPS не заявляется.
+### Исправления и проверка
 
-Обновлять при закрытой игре: распаковать полный приложенный ZIP → **Setup.cmd**. UE4SS устанавливается отдельно. Настройки сохраняются, создаётся резервная копия.
+Списки настроек прокручиваются вверх/вниз. Разделы: «Полёт», «Изображение», «Оснащение», «Мир и связь», «Настройки». Переработаны возврат управления/фокуса и очистка эффектов камеры игрока. Сканер продолжает ждать позднюю загрузку NPC; перед восстановлением видимости проверяется, что снаряжение всё ещё принадлежит тому же персонажу.
+
+Прошли 66 Lua-наборов, проверка синтаксиса 139 файлов и сверка установленных файлов по хешам. Используются прежние вспомогательные и нативные бинарные файлы; новой бинарной сборки в этой публикации нет. **gameplay_verified=false: исчезновение NPC и восстановление сканера в живой игре ещё не подтверждены.** Остаются ограничения подгрузки геометрии/коллизий, удалённой симуляции в альтернативном FPV и региональный эффект у ЧАЭС. NIR/SWIR имитируют изображение, а не спектральную съёмку.
+
+### Установка
+
+1. Отдельно установить UE4SS, совместимый с вашей версией S.T.A.L.K.E.R. 2.
+2. Закрыть игру, полностью распаковать **ZoneFPV-0.3.0-RC1.zip** в доступную для записи папку и запустить **Setup.cmd**. При необходимости выбрать папку игры.
+3. Подключить пульт в USB-режиме Joystick или геймпад, запустить игру и загрузить сохранение.
+4. Открыть **КПК → ZoneFPV** или нажать **F6** → **«Настройки → Пульт»**, выбрать устройство, проверить направления и выполнить калибровку.
+5. В Acro/Angle опустить газ, в 3D держать по центру. По умолчанию: **F6 — настройки, F8 — вход/выход из FPV, F9 — возврат к старту**; кнопки переназначаются. Закрыть меню/КПК для полёта.
+
+При обновлении настройки, калибровка и расположение OSD сохраняются, создаётся резервная копия предыдущего мода. На GitHub скачивать приложенный установочный ZIP, а не автоматический архив Source code. UE4SS и другие моды не включены и не заменяются. Компилятор и Python пользователю не нужны. Установка через Vortex не проверена.

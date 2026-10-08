@@ -12,9 +12,8 @@ The latest NPC/scanner corrections passed offline checks. **`gameplay_verified=f
 
 - Acro, self-leveling Angle and reversible-thrust 3D flight, with adjustable rates, expo, speed and camera tilt.
 - DirectInput, XInput and WinMM controller selection/profiles and four-axis calibration. Transmitters use USB Joystick/HID mode.
-- All settings inside the native PDA, with independent external F6 and shared preferences. Long lists scroll vertically.
+- The F6 settings menu is duplicated in the native PDA, sharing the same preferences. Long lists scroll vertically.
 - Arbitrary keyboard/mouse/controller button/CH assignments, each with Toggle/Hold. Held grenade release repeats at intervals; artifact collection retries on approach.
-- Draggable OSD preview and a vertical selector for all 14 indicators, including drone HP, detector and grenade stock. Independently enabled/styled normal and lower-camera crosshairs.
 - Night/infrared/thermal vision and analog effects, assignable flashlight and a lower camera that rotates with the body. NIR/SWIR approximate visible-light imagery.
 - Kamikaze, grenade-drop and combined modes; impact power/speed, RGD-5/F-1 and 1–20/unlimited charges.
 - NPC/mutant/anomaly scanning, artifact collection with adjustable reach, simulated interference/loss, time/weather/world-loading controls and five interface languages.
