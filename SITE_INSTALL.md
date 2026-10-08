@@ -1,11 +1,11 @@
 # ZoneFPV installation and troubleshooting / Установка и устранение неполадок
 
-**Current experimental prerelease: 0.3.0 RC1.** Latest NPC/scanner fixes have offline verification only (`gameplay_verified=false`). Stable 0.2.0 remains separate.
+**Current recommended release candidate: 0.3.0 RC1.** Latest NPC/scanner fixes have offline verification only (`gameplay_verified=false`). Older releases, including author-tested 0.2.0, remain available.
 
 ## English
 
 1. Install UE4SS compatible with your exact game update separately. See [requirements](DEPENDENCIES.md) and [UE4SS releases](https://github.com/UE4SS-RE/RE-UE4SS/releases). Keep the settings required by that runtime. The 0.3.0 native paths require supported game-thread execution; never switch to unsafe ProcessEvent as a workaround.
-2. Download the complete ZoneFPV installer ZIP from [Nexus](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) or [GitHub releases](https://github.com/mrwinka/ZoneFPV/releases). On GitHub, choose the attached installer ZIP, not the automatic Source code archive.
+2. Download the attached **ZoneFPV-0.3.0-RC1.zip** installer from the [latest GitHub release](https://github.com/mrwinka/ZoneFPV/releases/latest). The automatic Source code archive does not contain the ready-to-use runtime. The [Nexus file](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) is currently quarantined and unavailable.
 3. Close the game. Extract the complete ZIP into a writable folder and run **Setup.cmd**. If prompted, select the installation folder containing `Stalker2`.
 4. Connect a transmitter in **USB Joystick/HID** mode or a gamepad, launch the game and load a save. The input helper starts automatically.
 5. Open **PDA → ZoneFPV → Settings → Controller**, or **F6 → Settings → Controller**. Select the device and profile, verify stick directions and run the four-axis calibration wizard if needed. No external F6 window is needed for PDA calibration.
@@ -38,10 +38,10 @@ For a report, include ZoneFPV/game/UE4SS versions, device/interface, flight/FPV/
 
 ## Русский
 
-**Текущий экспериментальный выпуск — 0.3.0 RC1.** Последние исправления NPC/сканера проверены вне игры (`gameplay_verified=false`). Стабильная 0.2.0 остаётся отдельным выпуском.
+**Текущий рекомендуемый кандидат в релиз — 0.3.0 RC1.** Последние исправления NPC/сканера проверены вне игры (`gameplay_verified=false`). Старые выпуски, включая проверенную автором 0.2.0, остаются доступны.
 
 1. Отдельно установите UE4SS для точной версии игры. [Требования](DEPENDENCIES.md), [выпуски UE4SS](https://github.com/UE4SS-RE/RE-UE4SS/releases). Сохраните нужные ему настройки; не переключайте выполнение на небезопасный ProcessEvent как обход ошибки.
-2. Скачайте полный установочный ZIP с [Nexus](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) или [GitHub](https://github.com/mrwinka/ZoneFPV/releases). На GitHub нужен приложенный установочный ZIP, а не автоматический Source code.
+2. Скачайте приложенный установщик **ZoneFPV-0.3.0-RC1.zip** из [последнего выпуска GitHub](https://github.com/mrwinka/ZoneFPV/releases/latest). Автоматический Source code не содержит готовый runtime. [Файл Nexus](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) сейчас в карантине и недоступен.
 3. Закройте игру, распакуйте архив целиком и запустите **Setup.cmd**. При необходимости выберите папку, содержащую `Stalker2`.
 4. Подключите пульт через USB DATA в режиме **Joystick/HID** или геймпад. Запустите игру и загрузите сохранение; помощник ввода запускается автоматически.
 5. Откройте **КПК → ZoneFPV → Настройки → Пульт** либо **F6 → Настройки → Пульт**. Выберите устройство/профиль, проверьте направления и при необходимости пройдите калибровку четырёх осей. В КПК внешний F6 не открывается.

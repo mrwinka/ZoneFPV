@@ -2,7 +2,7 @@
 
 ZoneFPV adds a transmitter/gamepad-controlled FPV camera to S.T.A.L.K.E.R. 2, with a quadcopter flight model, configurable OSD and camera effects.
 
-**0.2.0 remains the author-tested stable release. 0.3.0 RC1 is an experimental prerelease.** The latest NPC/scanner corrections were tested offline; full gameplay validation remains pending (`gameplay_verified=false`).
+**0.3.0 RC1 is the current recommended release candidate. Older releases, including author-tested 0.2.0, remain available.** The latest NPC/scanner corrections were tested offline; full gameplay validation remains pending (`gameplay_verified=false`).
 
 ## Features
 
@@ -47,7 +47,7 @@ ZoneFPV code is MIT. The included Betaflight OSD font is separately GPL-3.0-or-l
 
 ZoneFPV добавляет управляемую пультом/геймпадом FPV-камеру с моделью полёта квадрокоптера, настраиваемым OSD и эффектами видения.
 
-**0.2.0 остаётся стабильным выпуском, проверенным автором. 0.3.0 RC1 — экспериментальный предварительный выпуск.** Последние исправления NPC/сканера проверены вне игры; полное игровое подтверждение остаётся открытым (`gameplay_verified=false`).
+**0.3.0 RC1 — текущий рекомендуемый кандидат в релиз. Старые выпуски, включая проверенную автором 0.2.0, сохранены.** Последние исправления NPC/сканера проверены вне игры; полное игровое подтверждение остаётся открытым (`gameplay_verified=false`).
 
 - Acro, самовыравнивание Angle и двунаправленная тяга 3D; скорость, rates, expo и наклон камеры.
 - Выбор DirectInput/XInput/WinMM, профили и мастер калибровки четырёх осей. Проверка настоящего DS4 ещё не выполнена.

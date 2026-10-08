@@ -1,6 +1,6 @@
 # ZoneFPV 0.3.0 RC1
 
-Experimental prerelease based on 0.2.0. This release includes the accumulated 0.3.0 work and the latest offline scanner/visibility corrections. Full gameplay verification remains pending.
+Current release candidate based on 0.2.0. This release includes the accumulated 0.3.0 work and the latest offline scanner/visibility corrections. Full gameplay verification remains pending.
 
 ## Changes since 0.2.0
 
@@ -30,7 +30,7 @@ Close the game, extract the complete attached ZIP and run **Setup.cmd**. Compati
 
 ## Русский
 
-Экспериментальный предварительный выпуск на основе 0.2.0. Включает накопленные изменения 0.3.0 и последние офлайн-исправления сканера и проверки видимости.
+Текущий кандидат в релиз на основе 0.2.0. Включает накопленные изменения 0.3.0 и последние офлайн-исправления сканера и проверки видимости.
 
 - Все настройки встроены в КПК: пульт и калибровка, назначение произвольных кнопок/CH, общие настройки и редактор OSD. F6 остаётся доступным; настройки общие.
 - Пять понятных групп, вертикальная прокрутка и параметры боевого режима по выбранному типу дрона.

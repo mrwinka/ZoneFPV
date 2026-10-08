@@ -1,6 +1,6 @@
 # ZoneFPV 0.3.0 RC1 — validation status
 
-This is an experimental prerelease based on stable 0.2.0. **`gameplay_verified=false`** for the latest changes. Offline checks pass; live NPC model preservation and scanner recovery remain open.
+0.3.0 RC1 is the current recommended release candidate, based on author-tested 0.2.0. **`gameplay_verified=false`** for the latest changes. Offline checks pass; live NPC model preservation and scanner recovery remain open. Latest placement does not change this validation status.
 
 ## Current evidence
 
@@ -20,12 +20,12 @@ Check simultaneous NPC/mutant scanning in ordinary and thermal vision, moving/ro
 
 ## Publication
 
-**GitHub is published:** [ZoneFPV 0.3.0 RC1](https://github.com/mrwinka/ZoneFPV/releases/tag/v0.3.0-rc1). Tag `v0.3.0-rc1` targets commit `90f85ffc781a98718462cdc644fefbf9a28fdf60`; the release is a prerelease. The clean installer, public verification and SHA256SUMS were downloaded again and SHA-256 verified. These are now the only three release attachments; three obsolete attachments were deleted after explicit user confirmation. Stable 0.2.0 remains preserved.
+**GitHub is published and marked Latest:** [ZoneFPV 0.3.0 RC1](https://github.com/mrwinka/ZoneFPV/releases/tag/v0.3.0-rc1) is the current recommended download. Tag `v0.3.0-rc1` targets commit `90f85ffc781a98718462cdc644fefbf9a28fdf60`; the version remains a release candidate. The clean installer, public verification and SHA256SUMS were downloaded again and SHA-256 verified. These are now the only three release attachments; three obsolete attachments were deleted after explicit user confirmation. Older releases, including author-tested 0.2.0, remain preserved.
 
 **ZoneFPV-0.3.0-RC1.zip** contains 126 files, including 109 runtime files; SHA-256: `36d620a5c317650378862f66d97f697dabd048e3054d2a784e8907a5c67f2afb`. Public names use 0.3.0 RC1 without the internal debugging number. The naming update changes one FPV log string and public documentation/file names. The other 108 runtime files, helper/native binaries and Armament PAK are unchanged. All 66 Lua suites, 139-file syntax checks and isolated install/update/uninstall checks passed.
 
-**Nexus is updated:** [mod 2799](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) lists version 0.3.0-RC1 with updated summary, full EN/RU description and changelog. New optional file 20277, **ZoneFPV 0.3.0 RC1 - Experimental prerelease**, contains the exact clean ZIP. The site displays 1.0 MB and 08 October 2026, 8:01 AM. Manual download only; the stable file remains primary. The website editor recovered, so no API key or separate script was needed.
+**Nexus page is updated, but the Main update is blocked:** [mod 2799](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) lists version 0.3.0-RC1 with updated summary, full EN/RU description and changelog. File **20277**, **ZoneFPV 0.3.0 RC1 - Experimental prerelease**, contains the exact clean ZIP and still appears in **Optional Files**. Nexus returned **403** when saving the Main/primary/name change; it did not apply. The older stable file remains primary. The editor also returned 403 after a normal sign-out/sign-in. A Cloudflare CAPTCHA checkbox now blocks further editing; its completion is still pending. The site displays 1.0 MB and 08 October 2026, 8:01 AM. Manual download only.
 
-**Nexus file availability is pending its scan:** the public Files tab currently says **Virus scanning in progress**, and the file is not yet downloadable. Nexus post-download/hash verification cannot be completed until the scan finishes. No scan clearance is claimed.
+**Nexus file 20277 is QUARANTINED:** it is not currently downloadable. Nexus post-download/hash verification cannot be completed until the file becomes available; no scan clearance is claimed. Use the GitHub installer meanwhile.
 
 These publication/naming changes do not change **`gameplay_verified=false`**. Live NPC preservation/scanner recovery, PDA OSD editing, button/CH assignments and controller hotplug/calibration still require in-game checks.

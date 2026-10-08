@@ -2,11 +2,11 @@
 
 A transmitter/gamepad-controlled FPV drone camera for S.T.A.L.K.E.R. 2, with quadcopter-style flight, configurable OSD and camera effects.
 
-**Stable release: 0.2.0. Latest experimental prerelease: 0.3.0 RC1.** Choose the corresponding attached installer ZIP in [Releases](https://github.com/mrwinka/ZoneFPV/releases). The automatic Source code archive is for development and does not contain a ready-to-use runtime.
+**Current recommended release: 0.3.0 RC1.** Download the attached **ZoneFPV-0.3.0-RC1.zip** installer from the [latest release](https://github.com/mrwinka/ZoneFPV/releases/latest). Older releases, including author-tested 0.2.0, remain available in [Releases](https://github.com/mrwinka/ZoneFPV/releases). The automatic Source code archive is for development and does not contain a ready-to-use runtime.
 
 [Русская инструкция](README_RU.md) · [Install and troubleshoot](SITE_INSTALL.md) · [Release notes](RELEASE_NOTES.md) · [Validation status](RELEASE_STATUS.md) · [Nexus Mods](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
 
-The latest NPC/scanner corrections passed offline checks. **`gameplay_verified=false`: NPC disappearance and scanner recovery remain unverified in a live game.** This is a prerelease, not a replacement claim for author-tested stable 0.2.0.
+The latest NPC/scanner corrections passed offline checks. **`gameplay_verified=false`: NPC disappearance and scanner recovery remain unverified in a live game.** 0.3.0 RC1 remains a release candidate; its Latest placement does not establish full gameplay verification. The Nexus file is currently quarantined, so use the GitHub installer.
 
 ## Features
 
