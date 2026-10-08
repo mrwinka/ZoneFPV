@@ -1,23 +1,22 @@
-# Публикация ZoneFPV 0.3.0 RC1 debug v58
+# ZoneFPV 0.3.0 RC1 v58 — publication status, 2026-10-08
 
-Пользователь разрешил опубликовать текущую сборку на существующих GitHub и Nexus и обновить описания. Текущий выпуск оформляется как **экспериментальный предварительный**, с сохранением стабильной 0.2.0 и предыдущих выпусков.
+The user authorized publication on the existing GitHub and Nexus pages. The verified runtime is published as an experimental prerelease; live NPC preservation/scanner recovery remains unverified (`gameplay_verified=false`).
 
-Последние изменения проверены вне игры: 66 Lua-наборов и синтаксис 139 файлов прошли; установка сверена по хешам. **`gameplay_verified=false`**. Исчезновение моделей NPC и восстановление сканера в живой игре не объявляются окончательно исправленными. Численный прирост FPS и отсутствие любых крашей не заявляются.
+## GitHub — published
 
-## GitHub
+- Source repository: https://github.com/mrwinka/ZoneFPV
+- Release: https://github.com/mrwinka/ZoneFPV/releases/tag/v0.3.0-rc1-v58
+- Release source commit: f9fc1eca4f83fbc37d3f8b4fc97575fbaedfd0e7; 267 exact source file hashes verified.
+- Assets: ZoneFPV-0.3.0-RC1-v58.zip, SHA256SUMS.txt, ZoneFPV-0.3.0-RC1-v58-verification.json. All were downloaded and hash-verified after publication.
+- Installer ZIP SHA-256: e1085ce4d23318a6b9d5daa13ec16987201cda9795e43cedc7910c1d65e79929.
+- Updated README EN/RU, installation, feature description, release notes, validation/review notes and source test entry point/fixtures. Existing releases are preserved; 0.2.0 remains the Latest stable release.
 
-Использовать [mrwinka/ZoneFPV](https://github.com/mrwinka/ZoneFPV). Обновить исходники и текущие инструкции, создать отдельный тег/предварительный выпуск для 0.3.0 RC1 debug v58 и приложить полный установочный ZIP с проверкой SHA-256. Автоматический Source code не заменяет установщик. Стабильную 0.2.0 и старые выпуски сохранить. Новые release notes описывают накопленные функции 0.3.0 и отдельно последние изменения v58.
+## Nexus — pending login
 
-Из публичных исходников/архива исключить частные настройки, журналы, исследования, резервные копии и внутренние результаты сборки. Runtime не менять при подготовке описаний; использовать проверенную v58 и сохранённые бинарники helper v55/native v51.
+Existing destination: https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799
 
-## Nexus Mods
+The available browser is signed out. The installer, English/Russian description and file/changelog notes are ready. No Nexus file or description has been changed. Resume after the user signs in; add a new optional prerelease file and retain stable/older files. Do not claim scan clearance or a completed Nexus publication without checking the actual result.
 
-Использовать существующую [страницу 2799](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799). При авторизованном доступе добавить v58 новым экспериментальным файлом, обновить общее описание EN/RU и запись изменений. Старые файлы/журнал сохранить. Не подменять стабильный файл экспериментальным незаметно.
+## Validation
 
-Если сервис требует входа или не разрешает загрузку, сохранить конкретные подготовленные ZIP/описания и честно отметить, что публикация Nexus не завершена. Не считать подготовку файла фактом загрузки.
-
-## Проверка результата
-
-После действий на каждом сервисе проверить фактические URL, название/версию, отметку предварительного выпуска, доступность архива и тексты. Итоговый отчёт пользователю должен отличать опубликованное от подготовленного/заблокированного. Обновить сведения о публикации только после подтверждения на сервисе.
-
-Совместимый UE4SS устанавливается отдельно. Обновление выполняется при закрытой игре, сохраняет настройки и создаёт резервную копию. Код — MIT, шрифт Betaflight — отдельно GPL-3.0-or-later; игровые ассеты не включаются в публичный архив.
+66 Lua suites passed, 139 source/test files parsed, runtime/install/package hashes verified. Public installer installation/update/uninstall checks and the clean source test run passed. Existing v55 helper and v51 native binaries are reused. No new game run, binary build or numerical FPS measurement was performed for publication.

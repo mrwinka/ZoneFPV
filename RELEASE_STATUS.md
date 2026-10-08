@@ -20,4 +20,8 @@ Check simultaneous NPC/mutant scanning in ordinary and thermal vision, moving/ro
 
 ## Publication
 
-The intended destinations are the existing [GitHub repository/releases](https://github.com/mrwinka/ZoneFPV/releases) and [Nexus page](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799). Release notes and descriptions identify v58 as experimental; stable 0.2.0 and earlier downloads remain separate. A prepared archive or description does not by itself confirm publication. Final publication URLs and availability must be verified on each service.
+GitHub source and the prerelease [v0.3.0-rc1-v58](https://github.com/mrwinka/ZoneFPV/releases/tag/v0.3.0-rc1-v58) were published on 2026-10-08. The tag points to f9fc1eca4f83fbc37d3f8b4fc97575fbaedfd0e7. All 267 source-tree file hashes were checked; all three attached assets were downloaded again and matched the prepared package. Stable 0.2.0 remains Latest and previous downloads are preserved.
+
+The public installer has 126 entries including 109 unchanged verified runtime files and the mod's own armament PAK. Its SHA-256 is e1085ce4d23318a6b9d5daa13ec16987201cda9795e43cedc7910c1d65e79929. It also passed isolated mock installation/update/uninstall checks. Local logs, private preferences and installation receipts are excluded.
+
+Nexus publication is still pending: the available browser requires login. The matching archive, bilingual description and file notes are prepared. No Nexus upload, description change or clearance is claimed. This publication status does not change gameplay_verified=false.
