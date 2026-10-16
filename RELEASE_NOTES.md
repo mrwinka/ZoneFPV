@@ -1,3 +1,9 @@
+# ZoneFPV 0.2.1 — 2026-10-16
+
+**0.2.1 is an installer-only update to stable 0.2.0.** Steam libraries on unavailable drives are now skipped, so automatic detection can continue or the game folder can be selected manually. Extract the complete archive, close the game and run **Setup.cmd**; no command is normally required. The game runtime and native helper are byte-for-byte identical to stable 0.2.0. The in-game version may still read 0.2.0. This release does not include 0.3.0 RC features.
+
+**0.2.1 — обновление только установщика стабильной 0.2.0.** Недоступные диски библиотек Steam теперь пропускаются: поиск игры продолжается, а при необходимости можно выбрать папку вручную. Полностью распакуйте архив, закройте игру и запустите **Setup.cmd** — обычно вводить команды не нужно. Игровые файлы и нативный помощник побайтово совпадают со стабильной 0.2.0. В игре номер версии может оставаться 0.2.0. Функции 0.3.0 RC в этот выпуск не включены.
+
 # ZoneFPV 0.2.0 — 2026-10-03
 
 Stable release, verified in game by the author. The full download includes the installer, native helper, source and licenses. Compatible UE4SS is required separately.

@@ -1,6 +1,8 @@
 # ZoneFPV — FPV Drone Camera
 
-Source for the stable **0.2.0** release, a UE4SS mod for STALKER 2 on Windows x64.
+**0.2.1 is an installer-only update to stable 0.2.0.** Steam libraries on unavailable drives are now skipped, so automatic detection can continue or the game folder can be selected manually. Extract the complete archive, close the game and run **Setup.cmd**; no command is normally required. The game runtime and native helper are byte-for-byte identical to stable 0.2.0. The in-game version may still read 0.2.0. This release does not include 0.3.0 RC features.
+
+Source for the stable **0.2.1** installer release, a UE4SS mod for STALKER 2 on Windows x64.
 
 [Nexus Mods page](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
 
@@ -8,7 +10,7 @@ This repository provides the source for review and local compilation. It does no
 
 ## Ready-to-install release
 
-Download **ZoneFPV-0.2.0.zip** from the [GitHub release list](https://github.com/mrwinka/ZoneFPV/releases). Earlier release candidates remain available separately. Version 0.2.0 includes main/alternative FPV, stronger collision, restored player/HUD state, rain/leaf/bird effects, resizable settings and OSD editor windows, geometry loading through 5×, optional manual object-limit configuration and a DualShock 4 DirectInput profile (physical testing pending). See [CHANGELOG.md](CHANGELOG.md), [RELEASE_NOTES.md](RELEASE_NOTES.md) and [OBJECT_LIMIT.md](OBJECT_LIMIT.md) for changes and known limitations.
+Download **ZoneFPV-0.2.1.zip** from the [GitHub release list](https://github.com/mrwinka/ZoneFPV/releases). Earlier release candidates remain available separately. Version 0.2.0 includes main/alternative FPV, stronger collision, restored player/HUD state, rain/leaf/bird effects, resizable settings and OSD editor windows, geometry loading through 5×, optional manual object-limit configuration and a DualShock 4 DirectInput profile (physical testing pending). See [CHANGELOG.md](CHANGELOG.md), [RELEASE_NOTES.md](RELEASE_NOTES.md) and [OBJECT_LIMIT.md](OBJECT_LIMIT.md) for changes and known limitations.
 
 ## Build the native helper
 
@@ -57,4 +59,3 @@ Lua tests require an independently installed Lua 5.4 interpreter. The optimized 
 ## Licenses and attribution
 
 ZoneFPV code: [MIT](LICENSE.txt). The separate, unmodified Betaflight bitmap font is distributed with its source and GPL-3.0-or-later license under `mod/fonts`. UE4SS and its game-specific compatibility patch are separate dependencies. Project code, UI text and documentation were developed with generative AI assistance; validation limits are documented above.
-
