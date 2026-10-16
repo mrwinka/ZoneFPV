@@ -219,6 +219,7 @@ end)
 test('production scanner writer, actual target validation and v4 packets share the current calibrated camera',function()
     local Overlay=dofile('mod/Scripts/scan_overlay.lua')
     Overlay.nativeBridge=nil
+    Overlay.view=nil -- Calibrated camera/packet fixture, without a game UI runtime.
     local previousOpen,previousFind,previousName=io.open,StaticFindObject,FName
     local packets,paths={},{}
     -- Packet I/O is captured in memory; real writer, projection factory and

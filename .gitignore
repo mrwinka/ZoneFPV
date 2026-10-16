@@ -1,9 +1,12 @@
-/build/
+/build/*
+!/build/build-armament-pak.py
 /backups/
 *.exe
 *.dll
 *.obj
 *.pdb
 *.log
+__pycache__/
 /mod/*.txt
+!/mod/LICENSE-MinHook.txt
 /mod/calibration*.lua*

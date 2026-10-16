@@ -193,7 +193,7 @@ function M.new(root,loader)
         if not self.visualFuncs or not self.visualFuncs.disarm then return true end
         return pcall(self.visualFuncs.disarm)
     end
-    function client:concussionArm(world,collection,comparison,number,secondaryComparison,secondaryNumber)
+    function client:concussionArm(world,collection,comparison,number,secondaryComparison,secondaryNumber,blastComparisons)
         local ok,err=self:open();if not ok then return false,err end
         if not self.concussionFuncs then
             self.concussionFuncs={}
@@ -211,6 +211,25 @@ function M.new(root,loader)
                 return false,'native secondary concussion FName invalid'
             end
         elseif secondaryNumber~=nil then return false,'native secondary concussion FName incomplete'end
+        if blastComparisons~=nil then
+            if type(blastComparisons)~='table'or #blastComparisons~=5 or not secondaryComparison or number~=0 or secondaryNumber~=0 then
+                return false,'native explosion FNames incomplete'
+            end
+            local seen={[comparison]=true,[secondaryComparison]=true}
+            for i=1,5 do
+                local index=blastComparisons[i]
+                if not uint(index,0xfffffffe)or index==0 or seen[index]then return false,'native explosion FNames invalid'end
+                seen[index]=true
+            end
+            if self.concussionBlastScope==nil then
+                local fn=loader(root..'ZoneFPVNative.dll','zonefpv_concussion_blast_scope')
+                self.concussionBlastScope=type(fn)=='function'
+            end
+            -- No control write/disarm on a capability miss. The caller may
+            -- explicitly retain its old dual gate and Lua correction, but must
+            -- never mistake legacy ready=true for seven-key protection.
+            if not self.concussionBlastScope then return false,'native blast scope unsupported'end
+        end
         local good,worldAddress,collectionAddress=pcall(function()
             assert(world and world:IsValid()and collection and collection:IsValid())
             return world:GetAddress(),collection:GetAddress()
@@ -223,7 +242,10 @@ function M.new(root,loader)
         if not file then return false,tostring(why)end
         -- The new control marker makes an older DLL reject a dual request;
         -- it must never report success after silently arming only the first key.
-        local request=secondaryComparison and string.format('ZFPVC44 %d %x %x %d %d %d %d\n',
+        local request=blastComparisons and string.format('ZFPVC70 %d %x %x %d %d %d %d %d %d %d\n',
+            self.concussionToken,worldAddress,collectionAddress,comparison,secondaryComparison,
+            blastComparisons[1],blastComparisons[2],blastComparisons[3],blastComparisons[4],blastComparisons[5])or
+            secondaryComparison and string.format('ZFPVC44 %d %x %x %d %d %d %d\n',
             self.concussionToken,worldAddress,collectionAddress,comparison,number,secondaryComparison,secondaryNumber)or
             string.format('ZFPVC21 %d %x %x %d %d\n',self.concussionToken,worldAddress,collectionAddress,comparison,number)
         local written=file:write(request)
@@ -237,6 +259,7 @@ function M.new(root,loader)
         end
         self.concussionActive=true;self.concussionElapsed=0;self.concussionLast=report
         self.concussionScope={world=world,collection=collection,worldAddress=worldAddress,collectionAddress=collectionAddress}
+        report.blastScope=blastComparisons~=nil
         return true,report
     end
     function client:concussionTick(dt,force)

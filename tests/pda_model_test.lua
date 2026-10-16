@@ -18,7 +18,7 @@ for i,p in ipairs(pages)do
     end
 end
 local expected={
-    ['Основное']={'Режим полёта','Множитель скорости','Альтернативный режим FPV','Свободный полёт сквозь стены','Разрешить запуск с поднятым газом'},
+    ['Основное']={'Режим полёта','Множитель скорости','Альтернативный режим FPV','Свободный полёт сквозь стены','Разрешить запуск с поднятым газом','Симуляция батареи','Ёмкость батареи','Количество ячеек'},
     ['Пульт']={'Устройство контроллера','Профиль контроллера','Состояние подключения','Калибровка осей','Отменить калибровку','Ход калибровки','CH1','CH2','CH3','CH4','CH5','CH6','CH7','CH8'},
     ['Камера']={'Наклон камеры','Режим видения','Стиль аналоговой камеры','Фонарик дрона','Нижняя камера'},
     ['OSD']={'Показывать OSD','Шрифт OSD','Элемент OSD','Показывать элемент','Размер элемента','Цвет элемента','Показывать обычный прицел','Обычный прицел','Показывать нижний прицел','Прицел нижней камеры','Предпросмотр нижней камеры','Сбросить выбранный элемент','Сбросить расположение OSD'},
@@ -35,17 +35,26 @@ for i,name in ipairs(pageNames)do
     assert(#pages[i].rows==#expected[name])
     for _,label in ipairs(expected[name])do assert(location[label]==i,label..' in wrong section');count=count+1 end
 end
-assert(count==74,'Complete inline controller/OSD without XY rows and all combined combat settings')
+assert(count==77,'Complete inline controller/OSD without XY rows and all combined combat settings')
 local osdPage=M.sections({})[4]
 assert(osdPage.inlineRows==13 and #osdPage.rows==13 and osdPage.rows[5].compactLabel=='Размер'
  and osdPage.rows[6].compactLabel=='Цвет','Compact OSD inspector omits XY sliders and retains all other operations')
 assert(osdPage.rows[4].compactLabel=='Отображать'and osdPage.rows[3].kind=='status'and osdPage.rows[3].command(1)==nil
- and #osdPage.osdItems==14,'All indicators belong to a vertical selector, with a read-only selected-item inspector label')
+ and #osdPage.osdItems==15,'All indicators belong to a vertical selector, with a read-only selected-item inspector label')
 assert(not rows['Положение по горизонтали']and not rows['Положение по вертикали'])
 assert(not rows['Диагностика кнопок контроллера'] and not expected['Эксперименты'])
 local function row(label)return assert(rows[label],'Missing row '..label)end
+assert(row('Симуляция батареи').value=='Вкл.' and row('Симуляция батареи').command()=='FPVBattery 0 1500 6')
+assert(row('Ёмкость батареи').set(1525)=='FPVBattery 1 1550 6' and row('Количество ячеек').set(8)=='FPVBattery 1 1500 8')
+local storedPack={enabled=false,capacity=2750,cells=4}
+local packRows=M.sections({batterySettings=storedPack})[1].rows
+assert(packRows[6].command()=='FPVBattery 1 2750 4' and packRows[7].set(20001)=='FPVBattery 0 20000 4'
+ and packRows[8].set(1)=='FPVBattery 0 2750 2' and not storedPack.enabled and storedPack.capacity==2750)
+
 local sliders={
     ['Множитель скорости']={0,5,.05},
+    ['Ёмкость батареи']={300,20000,50},
+    ['Количество ячеек']={2,8,1},
     ['Наклон камеры']={0,60,1},
     ['Дальность загрузки геометрии']={0,6,1},
     ['Максимальная дальность']={50,20000,50},
@@ -146,7 +155,7 @@ for mode=0,3 do
  assert(data.mode==mode and data.power==2.25,'Rendering never mutates saved combat fields')
 end
 local defaultCount=0;for _,p in ipairs(M.sections({}))do defaultCount=defaultCount+#p.rows end
-assert(defaultCount==70)
+assert(defaultCount==73)
 assert(row('Вид помех').command(1)=='FPVExperiments 0 1 1 1 1 1 1 1 1')
 local featureTokens={obstacles=2,characters=3,anomaliesScan=4,droneHP=5,reaction=6,anomalyInterference=7,anomalyDamage=8,detector=9}
 local featureLabels={obstacles='Препятствия ослабляют сигнал',characters='Сканировать NPC и мутантов',anomaliesScan='Сканировать аномалии',
@@ -264,7 +273,7 @@ for i,g in ipairs(groups)do
     assert(g.label==groupLabels[i]and #g.sections==#groupSections[i])
     for j,section in ipairs(g.sections)do assert(section.label==groupSections[i][j]);groupedCount=groupedCount+#section.rows end
 end
-assert(groupedCount==74 and #groups[5].sections[3].rows==8 and #groups[5].sections[2].rows==14,
+assert(groupedCount==77 and #groups[5].sections[3].rows==8 and #groups[5].sections[2].rows==14,
  'Controller belongs inside Settings, alongside General and all eight button assignments')
 for lang=0,4 do
     local f=assert(io.open(languageFile,'w'));f:write(tostring(lang));f:close();text.update(20+lang*2)
@@ -276,11 +285,11 @@ for lang=0,4 do
         end
     end
     local osd=dofile('mod/Scripts/pda_osd.lua').defaults()
-    for id=0,13 do
+    for id=0,14 do
         osd.selectedItemID=id;osd.fontChoice=id%8;osd.crossStyle=id%6;osd.downCrossStyle=(id+1)%6;osd.items[id+1].color=id%5
         local section=M.sections({osd=osd},text.translate)[4]
         local r=section.rows
-        assert(#section.osdItems==14 and section.osdItems[id+1].selected)
+        assert(#section.osdItems==15 and section.osdItems[id+1].selected)
         for i,item in ipairs(section.osdItems)do
             assert(item.id==i-1 and item.selected==(i-1==id))
             if lang>=2 then assert(not cyrillic(item.label),'Missing indicator list translation: '..item.label)end
@@ -292,4 +301,4 @@ for lang=0,4 do
     end
 end
 os.remove(languageFile);os.remove(prefix:sub(1,-2))
-print('PASS PDA five groups/eleven sections, Equipment restored, 74 maximum rows/70 unarmed, OSD13/no XY rows, charges1..20 then unlimited at right21/stored0, complete inline settings/12 sliders/eight captures and modes, precision and five languages')
+print('PASS PDA five groups/eleven sections, Equipment restored, 77 maximum rows/73 unarmed, OSD13/no XY rows, charges1..20 then unlimited at right21/stored0, complete inline settings/14 sliders/eight captures and modes, precision and five languages')

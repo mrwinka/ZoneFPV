@@ -38,11 +38,11 @@ local function legacy(config,version)
     if version>=2 then head[#head+1]=config.fontChoice end
     if version>=6 then head[#head+1]=config.downCrossStyle end
     if version>=7 then head[#head+1]=config.downCrossVisible and 1 or 0 end
-    local result={table.concat(head,' ')};local count=version>=5 and 14 or version==4 and 13 or version==3 and 11 or 10
+    local result={table.concat(head,' ')};local count=version>=8 and 15 or version>=5 and 14 or version==4 and 13 or version==3 and 11 or 10
     for i=1,count do local e=config.items[i];result[#result+1]=string.format('%.17g %.17g %d %d %d',e.x,e.y,e.size,e.color,e.visible and 1 or 0)end
     return table.concat(result,'\n')..'\n'
 end
-local baseline=M.defaults();assert(M.version==7 and M.itemCount==14 and #baseline.items==14)
+local baseline=M.defaults();assert(M.version==8 and M.itemCount==15 and #baseline.items==15)
 assert(#M.fonts==8 and #M.styles==6 and #M.colorNames==5)
 assert(baseline.items[5].id==4 and baseline.items[5].visible and baseline.downCrossVisible and baseline.downCrossStyle==4)
 assert(baseline.items[12].size==14 and baseline.items[13].color==3 and baseline.items[14].color==2)
@@ -51,33 +51,33 @@ baseline.items[1].x=0;assert(M.defaults().items[1].x==.14,'Defaults must not sha
 baseline=M.defaults()
 -- Compare the authoritative native default table rather than only our fixture.
 local source=assert(io.open('src/osd.h','rb'));local native=source:read('*a');source:close()
-assert(native:find('f<<"7 "',1,true)and native:find('inline constexpr int itemCount=14',1,true))
+assert(native:find('f<<"8 "',1,true)and native:find('inline constexpr int itemCount=15',1,true))
 local body=assert(native:match('defaults={(.-)};'));local nativeItems={}
 for x,y,size,color,visible in body:gmatch('{([%d%.]+),([%d%.]+),(%d+),(%d+),(%a+)}')do
     nativeItems[#nativeItems+1]={tonumber(x),tonumber(y),tonumber(size),tonumber(color),visible=='true'}
 end
-assert(#nativeItems==14)
+assert(#nativeItems==15)
 for i,e in ipairs(nativeItems)do local item=baseline.items[i]
     assert(item.x==e[1]and item.y==e[2]and item.size==e[3]and item.color==e[4]and item.visible==e[5],'Native default mismatch at '..i)
 end
 local customized=M.defaults();customized.enabled=false;customized.fontChoice=7;customized.crossStyle=2
 customized.downCrossStyle=5;customized.downCrossVisible=false
 for i,e in ipairs(customized.items)do e.x=i/20;e.y=1-i/20;e.size=14+i;e.color=i%5;e.visible=i%2==0 end
-for version=1,7 do
+for version=1,8 do
     local text=legacy(customized,version);local config=assert(M.parse(text))
-    assert(config.version==7 and config.sourceVersion==version and not config.enabled and config.crossStyle==2)
+    assert(config.version==8 and config.sourceVersion==version and not config.enabled and config.crossStyle==2)
     assert(config.fontChoice==(version>=2 and 7 or 0))
     assert(config.downCrossStyle==(version>=6 and 5 or 4)and config.downCrossVisible==(version<7))
-    local count=version>=5 and 14 or version==4 and 13 or version==3 and 11 or 10
+    local count=version>=8 and 15 or version>=5 and 14 or version==4 and 13 or version==3 and 11 or 10
     for i,e in ipairs(config.items)do local expected=i<=count and customized.items[i]or baseline.items[i]
         assert(e.x==expected.x and e.y==expected.y and e.size==expected.size and e.color==expected.color and e.visible==expected.visible)
     end
-    assert(M.parse(assert(M.serialize(config))).sourceVersion==7,'Explicit future edits migrate legacy layouts to native v7')
+    assert(M.parse(assert(M.serialize(config))).sourceVersion==8,'Explicit future edits migrate legacy layouts to native v8')
 end
 local current=assert(M.serialize(customized));assert(M.parse(current).items[14].size==28)
-local malformed={current:gsub('^7','8'),current..'trailing',current:gsub('^7 0 2','7 2 2'),
-    current:gsub('^7 0 2','7 0 6'),current:gsub('^7 0 2 7','7 0 2 8'),current:gsub('7 0 2 7 5 0','7 0 2 7 6 0',1),
-    current:gsub('7 0 2 7 5 0','7 0 2 7 5 2',1),current:match('^(.-)\n[^\n]+\n$'),'',string.rep(' ',4097),
+local malformed={current:gsub('^8','9'),current..'trailing',current:gsub('^8 0 2','7 2 2'),
+    current:gsub('^8 0 2','7 0 6'),current:gsub('^8 0 2 7','8 0 2 8'),current:gsub('8 0 2 7 5 0','8 0 2 7 6 0',1),
+    current:gsub('8 0 2 7 5 0','8 0 2 7 5 2',1),current:match('^(.-)\n[^\n]+\n$'),'',string.rep(' ',4097),
     current:gsub('0.05','nan',1),current:gsub('0.05','inf',1),current:gsub('0.05','0x1',1),
     current:gsub('0.05','-0.1',1),current:gsub('0.05','1.1',1),current:gsub(' 15 1 0',' 13 1 0',1),
     current:gsub(' 15 1 0',' 73 1 0',1),current:gsub(' 15 1 0',' 15.0 1 0',1),
@@ -87,11 +87,22 @@ assert(not M.parse(nil)and not M.parse({}))
 local exponent=current:gsub('\n%S+','\n5e-2',1);assert(M.parse(exponent).items[1].x==.05,'Finite decimal scientific coordinates match native reader')
 local invalid=M.defaults();invalid.items[1].x=0/0;assert(not M.serialize(invalid))
 invalid=M.defaults();invalid.items[14].size=math.huge;assert(not M.serialize(invalid))
-print('PASS pda_osd seven native versions/defaults/strict parser')
+print('PASS pda_osd eight native versions/defaults/strict parser')
+do
+    local original=legacy(customized,7);local c,files,_,_,_,path=fixture(original)
+    local before=c:snapshot();assert(before.items[15].label=='Батарея дрона'and before.items[15].x==.22 and before.items[15].visible)
+    assert(c:execute('selectItem',{id=14})and c:execute('position',{id=14,x=.42,y=.32}))
+    assert(c:execute('size',{id=14,value=28})and c:execute('color',{id=14,value=3})and c:execute('item',{id=14,field='visible',value=false}))
+    local saved=assert(M.parse(files[path]));assert(saved.sourceVersion==8 and saved.items[15].x==.42 and saved.items[15].size==28 and not saved.items[15].visible)
+    for i=1,14 do local a,b=before.items[i],saved.items[i]
+        assert(a.x==b.x and a.y==b.y and a.size==b.size and a.color==b.color and a.visible==b.visible,'Battery edits preserve older indicator '..i)
+    end
+end
+print('PASS independent battery indicator selection/drag/style/visibility and lossless v7-to-v8 migration')
 
 do
     local c,files,calls,_,time,path=fixture(current);local initial=copy(calls)
-    local snap=c:snapshot();assert(snap.status=='loaded'and snap.sourceVersion==7 and snap.fontChoice==7)
+    local snap=c:snapshot();assert(snap.status=='loaded'and snap.sourceVersion==8 and snap.fontChoice==7)
     assert(c:execute('selectItem',{id=13})and c.execute('previewDown',{value=true}))
     local preview,previewCalls=M.preview,0
     M.preview=function(...)previewCalls=previewCalls+1;return preview(...)end
@@ -110,7 +121,7 @@ do
 end
 do
     local c,files,calls,_,_,path=fixture(nil)
-    assert(c:snapshot().status=='missing'and #c:snapshot().items==14 and calls.write==0)
+    assert(c:snapshot().status=='missing'and #c:snapshot().items==15 and calls.write==0)
     assert(c:execute('enabled',{value=false}));assert(M.parse(files[path]).enabled==false)
     local once=calls.write;assert(c:execute('enabled',{value=false})and calls.write==once,'A no-op does not rewrite a layout')
 end
@@ -118,7 +129,7 @@ do
     local text=legacy(customized,3);local c,files,calls,_,_,path=fixture(text)
     assert(c:execute('fontChoice',{value=7})and calls.write==0 and files[path]==text,'Opening or a no-op must not silently migrate legacy files')
     assert(c:execute('downCrossVisible',{value=false}));local migrated=assert(M.parse(files[path]))
-    assert(migrated.sourceVersion==7 and migrated.fontChoice==7 and migrated.items[11].x==customized.items[11].x
+    assert(migrated.sourceVersion==8 and migrated.fontChoice==7 and migrated.items[11].x==customized.items[11].x
         and migrated.items[12].size==14 and not migrated.downCrossVisible,'Explicit edits retain legacy siblings and add native missing defaults')
 end
 print('PASS pda_osd read-only bounded refresh/migration/partial-file retention')
@@ -132,11 +143,11 @@ do
     end
     assert(#rows==13 and byLabel['Шрифт OSD'].value=='Bahnschrift')
     local items=M.itemList(rendered)
-    assert(#items==14 and items[13].selected and rows[3].kind=='status'and rows[3].command(1)==nil,
+    assert(#items==15 and items[13].selected and rows[3].kind=='status'and rows[3].command(1)==nil,
         'Indicator choices form a full list rather than a cycling inspector control')
     for i,item in ipairs(items)do assert(item.id==i-1 and item.label==rendered.items[i].label and item.selected==(i==13))end
     local listWrites=files[path]
-    for id=0,13 do assert(c:execute('selectItem',{id=id}))end
+    for id=0,14 do assert(c:execute('selectItem',{id=id}))end
     assert(files[path]==listWrites,'Choosing indicators never saves the layout')
     assert(c:execute('selectItem',{id=12}))
     assert(not byLabel['Положение по горизонтали']and not byLabel['Положение по вертикали'],'XY rows are removed, positioning stays in preview drag')
@@ -157,7 +168,7 @@ do
     assert(saved.items[13].x==.9 and saved.items[13].color==3)
     local readonly=files[path]
     for _,request in ipairs({{'fontChoice',{value=8}},{'crossStyle',{value=6}},{'downCrossStyle',{value=-1}},
-        {'enabled',{value='1'}},{'downCrossVisible',{value=2}},{'item',{id=14,field='x',value=.2}},
+        {'enabled',{value='1'}},{'downCrossVisible',{value=2}},{'item',{id=15,field='x',value=.2}},
         {'item',{id=0,field='unknown',value=1}},{'item',{id=0,field='size',value=14.5}},
         {'item',{id=0,field='x',value=0/0}},{'item',{id=0,field='x',value=math.huge}},
         {'position',{id=0,x=1.001,y=0}},{'selectItem',{id=-1}},{'previewDown',{value='false'}},{'unknown',{}},
@@ -221,14 +232,14 @@ do
     local expected={4,1,4,16,17,8}
     for style=0,5 do
         s.crossStyle=style;local primitives,bounds=M.preview(s);local lines,texts,cross=0,0,0
-        assert(#bounds==14)
+        assert(#bounds==15)
         for _,e in ipairs(primitives)do
             if e.kind=='line'then lines=lines+1;if e.id==4 then cross=cross+1 end else texts=texts+1 end
             assert(e.x>=0 and e.x<=1 and e.y>=0 and e.y<=1 and e.width>=0 and e.width<=1 and e.height>=0 and e.height<=1)
             assert(e.colorRGB.R>=0 and e.colorRGB.R<=1 and e.colorRGB.A==1)
         end
-        assert(cross==expected[style+1]and lines<=32 and texts==11,'All actual crosshair styles fit bounded native preview primitives')
-        assert(bounds[5].selected and bounds[12].visible and primitives[#primitives].text=='GRENADES 3')
+        assert(cross==expected[style+1]and lines<=32 and texts==12,'All actual crosshair styles fit bounded native preview primitives')
+        assert(bounds[5].selected and bounds[12].visible and primitives[#primitives].text=='BAT 85% 23.4V 12A 225mAh')
     end
     s.items[5].visible=false;s.downCrossVisible=true;s.previewDown=true;s.downCrossStyle=4
     local primitives,bounds=M.preview(s);local cross,horizon=0,0
@@ -237,7 +248,7 @@ do
     s.downCrossVisible=false;primitives=M.preview(s);for _,e in ipairs(primitives)do assert(e.id~=4)end
     s.enabled=false;primitives=M.preview(s);local visibleText=0
     for _,e in ipairs(primitives)do if e.kind=='text'and e.visible then visibleText=visibleText+1 end end
-    assert(visibleText==11,'Native editor preview remains usable with live OSD master disabled')
+    assert(visibleText==12,'Native editor preview remains usable with live OSD master disabled')
     s.enabled=true;s.previewDown=false;s.items[4].x=0;s.items[4].y=0;s.items[5].visible=true;s.items[5].x=1;s.items[5].y=1
     s.items[8].x=0;s.items[8].y=1;s.crossStyle=4
     primitives,bounds=M.preview(s,200,900)
@@ -273,7 +284,7 @@ do
     local moved=assert(M.dragPosition(s,0,.45,.60,dx,dy))
     assert(near(moved.x,.44)and near(moved.y,.607)and moved.id==0)
     local edge=assert(M.dragPosition(s,13,2,-1,0,0));assert(edge.x==.98 and edge.y==.02)
-    assert(not M.dragPosition(s,14,.5,.5)and not M.dragPosition(s,0,0/0,.5)
+    assert(not M.dragPosition(s,15,.5,.5)and not M.dragPosition(s,0,0/0,.5)
         and not M.dragPosition(s,0,.5,math.huge)and not M.dragPosition({},0,.5,.5)
         and not M.dragPosition(s,0,nil,.5)and not M.dragPosition(s,0,.5,nil))
     assert(M.serialize(s)==before,'Hit testing and drag drafts cannot mutate the persisted snapshot')
@@ -299,7 +310,7 @@ if arg and arg[1]then
     assert(c:execute('position',{id=13,x=.12345678901234566,y=.9876543210123456}))
     assert(c:execute('downCrossVisible',{value=false}))
     local reopened=M.new(root);local saved=reopened:snapshot()
-    assert(saved.sourceVersion==7 and saved.fontChoice==7 and saved.crossStyle==5 and not saved.downCrossVisible)
+    assert(saved.sourceVersion==8 and saved.fontChoice==7 and saved.crossStyle==5 and not saved.downCrossVisible)
     assert(saved.items[14].x==.12345678901234566 and saved.items[14].y==.9876543210123456)
     for _,name in ipairs({'osd-layout.pda.tmp','osd-layout.pda.rollback'})do
         local f=io.open(root..name,'rb');if f then f:close();error('Real-I/O transaction leaked: '..name)end

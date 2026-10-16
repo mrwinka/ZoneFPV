@@ -83,6 +83,17 @@ function M.sections(s,translate)
     option(p,'Альтернативный режим FPV','alternate','В альтернативном режиме персонаж остаётся на старте. Смена режима завершает полёт.')
     option(p,'Свободный полёт сквозь стены','noclip','Отключает столкновения с геометрией мира во время FPV.')
     option(p,'Разрешить запуск с поднятым газом','hotstart','Позволяет начать полёт, даже если стик газа не опущен.')
+    local pack=s.batterySettings or {}
+    local packEnabled=pack.enabled~=false
+    local capacity=clamp(math.floor((finite(pack.capacity,1500)-300)/50+.5)*50+300,300,20000)
+    local cells=clamp(math.floor(finite(pack.cells,6)+.5),2,8)
+    local function battery(on,mah,count)return string.format('FPVBattery %d %d %d',on and 1 or 0,mah,count)end
+    toggle(p,'Симуляция батареи',packEnabled,function(value)return battery(value,capacity,cells)end,
+        'Разряд, напряжение и масса LiPo влияют на полёт. Новый вход в FPV даёт полный пакет; возврат к старту не заряжает батарею. Смена настройки завершает полёт.')
+    slider(p,'Ёмкость батареи',capacity,300,20000,50,function(value)return string.format('%d mAh',value)end,
+        function(value)return battery(packEnabled,value,cells)end,'Больше ёмкость — дольше полёт и тяжелее батарея.')
+    slider(p,'Количество ячеек',cells,2,8,1,function(value)return string.format('%dS',value)end,
+        function(value)return battery(packEnabled,capacity,value)end,'Количество последовательно соединённых ячеек LiPo: от 2S до 8S.')
 
     p=page('Пульт','Выберите пульт и откалибруйте стики. Кнопки настраиваются в разделе «Настройки».')
     local settings=s.settings or {}

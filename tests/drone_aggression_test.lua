@@ -271,6 +271,33 @@ test('native protocol verifies token actor count order and valid identity before
         assert(client:request(p,{a},false)==nil,'v11 DLL cannot silently omit acquisition history')
     end)
 end)
+test('a real native attacker can be cleared after an entire flight with null sampled aim',function()
+    protocol(function(files,loader,setReply)
+        local world=object(0x10000);local pawn=object(0x20000,world);local actor=object(0x30000,world)
+        local s={world=world,pawn=pawn,worldExperiments={entries={}}}
+        FindAllOf=function(kind)assert(kind=='Agent');return {actor}end
+        local attacked=false;local queries,clears=0,0
+        setReply(function(token,mode,_,_,n,request)
+            assert(n==1)
+            if mode=='1'then
+                clears=clears+1
+                assert(request:find('30000 101 40000 7 0\n',1,true),
+                    'the real Lua cleanup must pass the original identity even without a sampled acquisition')
+                assert(attacked,'native attack ledger is independent evidence, never invented by Lua')
+                return 'ZFPVAG12 1 '..token..' 100 1 0\n30000 101 40000 7 0 1 1 0\n'
+            end
+            queries=queries+1
+            return 'ZFPVAG12 1 '..token..' 100 1 0\n30000 101 40000 7 0 0 0 0\n'
+        end)
+        local g=assert(aggression.start(s,'fixture/',nil,aggression.new('fixture/',loader)));g:activate()
+        attacked=true -- receive detour ledger; GetFocusedEnemy remains null between aim bursts
+        g:update(s,0);g:prepare()
+        assert(g.acquiredCount==0 and not g.baseline[actor.address].acquired)
+        assert(g:restore()and g.cleared==1 and clears==1 and queries==3,
+            'periodic/last-frame null aim must not suppress native cleanup using exact incoming attack evidence')
+        assert(g:restore()and clears==1,'native attacker reset remains once-only')
+    end)
+end)
 FindAllOf=nil
 NotifyOnNewObject=nil
 print('PASS '..count..' drone aggression tests')

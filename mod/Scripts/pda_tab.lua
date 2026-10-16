@@ -2,6 +2,10 @@
 -- Create runs the normal UUserWidget lifecycle; native siblings stay untouched.
 local M={}
 local owned=setmetatable({}, {__mode='k'})
+function M.forget(view)
+    local previous=view and owned[view]
+    if previous then previous.destroyed=true;owned[view]=nil end
+end
 local function read(o,k)local ok,v=pcall(function()return o[k]end);if ok then return v end end
 local function invoke(o,k,...)
     return o[k](o,...)
@@ -206,11 +210,15 @@ function M.new(view,controller,log)
             if success then self.active=value end
             return success,err
         end
+        function tab:abandon()
+            -- A stale owner grants no authority to remove native widgets.
+            self.destroyed=true
+            if owned[view]==self then owned[view]=nil end
+        end
         function tab:destroy()
             if self.destroyed then return end
-            self.destroyed=true
+            self:abandon()
             if valid(self.widget)then call(self.widget,'RemoveFromParent')end
-            if owned[view]==self then owned[view]=nil end
         end
         local ready,err=tab:setActive(false);assert(ready,err)
         owned[view]=tab

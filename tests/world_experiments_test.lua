@@ -274,7 +274,7 @@ prompt:update(s,options,.001,.081)
 assert(g.anomalyDamageRate==80,'a notified cached address refreshes its old far-away cell before hazards')
 local lookupCount=scans
 for n=1,5 do prompt:update(s,options,.016,60+n)end
-assert(scans==lookupCount,'registered notifications disable periodic global lookups')
+assert(scans==lookupCount,'periodic reconciliation cannot restart an undrained initial array')
 prompt:finish(s)
 
 -- A notified hazard can be observed before its constructor installs a world.
@@ -610,6 +610,10 @@ for frame=0,140 do
         assert(g.scannerDiagnostics.deferredNPC==8,'unloaded initial actors outlive thirty fast retries')
         recycled.instance=2;foreignPending.world=object();deadPending.DeadBodyComponent=object()
         expiredPending.invalid=true;addressPending.address=addressPending.address+1
+        -- These old pending identities are no longer loaded candidates. A
+        -- fresh valid pool identity returned by reconciliation is covered by
+        -- scanner_pool_lifecycle_test and may correctly be admitted anew.
+        lists.Agent={ready5,ready10,hiddenLate}
     end
     if frame==50 then ready5.Mesh.SkinnedAsset=object()end
     if frame==60 then
@@ -622,7 +626,7 @@ for frame=0,140 do
     if frame>=70 and frame<100 then assert(#g.entries==1 and #g.markers==1,'five-second asset load remains visible across frames')end
     if frame>=120 then assert(#g.entries==3 and #g.markers==2,'ten-second readiness recovers; genuine hidden NPC stays excluded')end
 end
-assert(scans==lateScans+1,'long-lived pending discovery never repeats global FindAllOf with notifications')
+assert(scans==lateScans+8,'character reconciliation occurs every two seconds with notifications')
 assert(g.scannerDiagnostics.live==3 and g.scannerDiagnostics.hidden==1 and g.scannerDiagnostics.deferredNPC==0)
 assert(not g.byAddress[recycled.address] and not g.byAddress[foreignPending.address]
     and not g.byAddress[deadPending.address] and not g.byAddress[expiredPending.address]
@@ -630,7 +634,7 @@ assert(not g.byAddress[recycled.address] and not g.byAddress[foreignPending.addr
 hiddenLate.bHidden=false
 for frame=141,146 do late:update(s,{characters=true},.1,frame*.1);assert(#g.markers==3)end
 late:update(s,{characters=true},.1,60)
-assert(scans==lateScans+1 and #g.markers==3,'same ready actors persist without a fresh event or periodic enumeration')
+assert(scans==lateScans+9 and #g.markers==3,'a sparse later reconciliation preserves the same ready actors')
 assert(ready5.writes==0 and ready10.writes==0 and hiddenLate.writes==0,'pending reads do not alter NPC rendering')
 late:finish(s)
 
@@ -654,7 +658,7 @@ for frame=1,120 do
     end
     if frame>=110 then assert(#g.entries==1 and #g.markers==1,'same early-notified actor recovers when its root becomes ready')end
 end
-assert(scans==earlyScans and earlyNPC.writes==0)
+assert(scans<=earlyScans+6 and earlyNPC.writes==0,'sparse reconciliation never changes pending actor rendering')
 early:finish(s)
 
 -- Slow pending work still uses the production native deadline, even when a
@@ -703,7 +707,7 @@ assert(scans==fallbackScans+1 and g.queues.Agent.initial and g.queues.Agent.curs
 assert(g.performance.discovered==16 and #g.entries==16 and g.scannerDiagnostics.deferredNPC==0,
     'eight ready deferred actors alternate with eight reads from a large initial fallback array')
 fallbackAPI:finish(s)
-print('PASS same NPC late mesh readiness at 5/10 seconds, hidden/stale/dead/world guards, bounded pending queue and native deadline without repeated global search')
+print('PASS same NPC late mesh readiness at 5/10 seconds, hidden/stale/dead/world guards, bounded pending queue and native deadline with sparse reconciliation')
 print('PASS scanner lifecycle/world/name identity, root-ready construction, hidden NPCs and invalid-transform phantom rejection')
-print('PASS independent sensor target cache, hidden scanner markers and no repeated character search')
+print('PASS independent sensor target cache, hidden scanner markers and bounded character lookup cadence')
 print('PASS bounded native discovery/refresh, priority streamed hazards, safe NPC reads, spatial fast-flight markers and every-frame swept damage')

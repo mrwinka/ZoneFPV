@@ -21,12 +21,14 @@ struct Data {bool active=false;double speed=0,altitude=0,distance=0,pitch=0,roll
     bool signalEnabled=false;double rssi=100;bool signalLost=false;
     int noiseStyle=0;bool hpEnabled=false;double hpPercent=100;
     bool detectorEnabled=false;double artifactDistance=-1;bool artifactReady=false;
-    bool grenadeEnabled=false;int grenadeRemaining=0;bool cameraDown=false;};
+    bool grenadeEnabled=false;int grenadeRemaining=0;bool cameraDown=false;
+    bool batteryEnabled=false;double batteryPercent=0,batteryVoltage=0,batteryCurrent=0,batteryUsed=0;
+    int batteryCapacity=0,batteryCells=0;bool batteryWarning=false,batteryCritical=false,batteryDepleted=false;};
 inline Data data;
 inline bool parseTelemetry(std::istream& f,Data& result,ULONGLONG& sequence){
     int version=0,on=0,signalOn=0,lost=0;ULONGLONG seq=0,end=0;Data d;
     if(!(f>>version>>seq>>on>>d.speed>>d.altitude>>d.distance>>d.pitch>>d.roll>>d.heading>>d.home>>d.seconds>>d.climb>>d.throttle)
-       ||(version<1||version>5)||(on!=0&&on!=1))return false;
+       ||(version<1||version>6)||(on!=0&&on!=1))return false;
     if(version>=2){
         if(!(f>>signalOn>>d.rssi>>lost)||(signalOn!=0&&signalOn!=1)||(lost!=0&&lost!=1)||
            !std::isfinite(d.rssi)||d.rssi<0||d.rssi>100||(!signalOn&&lost))return false;
@@ -50,6 +52,21 @@ inline bool parseTelemetry(std::istream& f,Data& result,ULONGLONG& sequence){
         d.grenadeEnabled=grenadeOn==1;
     }
     if(version>=5){int down=0;if(!(f>>down)||(down!=0&&down!=1)||(!on&&down))return false;d.cameraDown=down==1;}
+    if(version>=6){
+        int batteryOn=0,warning=0,critical=0,depleted=0;
+        if(!(f>>batteryOn>>d.batteryPercent>>d.batteryVoltage>>d.batteryCurrent>>d.batteryUsed
+            >>d.batteryCapacity>>d.batteryCells>>warning>>critical>>depleted)
+            ||(batteryOn!=0&&batteryOn!=1)||warning<0||warning>1||critical<0||critical>1||depleted<0||depleted>1
+            ||!std::isfinite(d.batteryPercent)||d.batteryPercent<0||d.batteryPercent>100
+            ||!std::isfinite(d.batteryVoltage)||d.batteryVoltage<0||d.batteryVoltage>40
+            ||!std::isfinite(d.batteryCurrent)||d.batteryCurrent<0||d.batteryCurrent>1000
+            ||!std::isfinite(d.batteryUsed)||d.batteryUsed<0)return false;
+        if(batteryOn){if(!on||d.batteryCapacity<300||d.batteryCapacity>20000||d.batteryCapacity%50
+            ||d.batteryCells<2||d.batteryCells>8||d.batteryUsed>d.batteryCapacity)return false;}
+        else if(d.batteryPercent!=0||d.batteryVoltage!=0||d.batteryCurrent!=0||d.batteryUsed!=0
+            ||d.batteryCapacity!=0||d.batteryCells!=0||warning||critical||depleted)return false;
+        d.batteryEnabled=batteryOn==1;d.batteryWarning=warning==1;d.batteryCritical=critical==1;d.batteryDepleted=depleted==1;
+    }
     std::string extra;if(!(f>>end)||seq!=end||(f>>extra))return false;
     for(double v:{d.speed,d.altitude,d.distance,d.pitch,d.roll,d.heading,d.home,d.seconds,d.climb,d.throttle})
         if(!std::isfinite(v)||std::abs(v)>1e8)return false;
@@ -159,10 +176,10 @@ inline void drawFactionIcon(HDC target,int faction,int x,int y,int size,COLORREF
     AlphaBlend(target,x,y,size,size,icon.dc,0,0,64,64,blend);
 }
 struct Item{double x,y;int size,color;bool visible;};
-inline constexpr int itemCount=14;
-inline const std::array<Item,itemCount> defaults={{{.14,.80,24,0,true},{.82,.80,24,0,true},{.82,.86,24,0,true},{.50,.50,24,0,true},{.50,.50,24,0,true},{.14,.86,24,0,true},{.50,.12,24,0,true},{.50,.21,24,0,true},{.14,.73,24,0,false},{.82,.73,24,0,false},{.14,.66,24,0,true},{.90,.09,14,0,true},{.90,.14,14,3,true},{.90,.19,14,2,true}}};
+inline constexpr int itemCount=15;
+inline const std::array<Item,itemCount> defaults={{{.14,.80,24,0,true},{.82,.80,24,0,true},{.82,.86,24,0,true},{.50,.50,24,0,true},{.50,.50,24,0,true},{.14,.86,24,0,true},{.50,.12,24,0,true},{.50,.21,24,0,true},{.14,.73,24,0,false},{.82,.73,24,0,false},{.14,.66,24,0,true},{.90,.09,14,0,true},{.90,.14,14,3,true},{.90,.19,14,2,true},{.22,.59,14,0,true}}};
 inline auto items=defaults;
-inline const wchar_t* names[]={L"Speed / km/h",L"Altitude / m (home)",L"Home distance / m",L"Artificial horizon",L"Crosshair",L"Flight timer",L"Heading / degrees",L"Home direction",L"Throttle / %",L"Vertical speed / m/s",L"RSSI / % (simulated)",L"Здоровье дрона / %",L"Детектор артефактов",L"Запас гранат"};
+inline const wchar_t* names[]={L"Speed / km/h",L"Altitude / m (home)",L"Home distance / m",L"Artificial horizon",L"Crosshair",L"Flight timer",L"Heading / degrees",L"Home direction",L"Throttle / %",L"Vertical speed / m/s",L"RSSI / % (simulated)",L"Здоровье дрона / %",L"Детектор артефактов",L"Запас гранат",L"Батарея дрона"};
 static_assert(std::size(names)==itemCount);
 inline COLORREF colors[]={RGB(255,255,255),RGB(80,255,110),RGB(255,220,60),RGB(60,225,255),RGB(255,110,110)};
 inline RECT bounds[itemCount]{};
@@ -269,17 +286,17 @@ struct Surface{HDC dc=nullptr;HBITMAP bitmap=nullptr;HGDIOBJ old=nullptr;int w=0
 };
 inline Surface overlaySurface,previewSurface;
 inline bool save(){
-    auto path=root/L"osd-layout.tmp";std::ofstream f(path);f<<"7 "<<enabled<<' '<<crossStyle<<' '<<fontChoice<<' '<<downCrossStyle<<' '<<downCrossVisible<<'\n';
+    auto path=root/L"osd-layout.tmp";std::ofstream f(path);f<<"8 "<<enabled<<' '<<crossStyle<<' '<<fontChoice<<' '<<downCrossStyle<<' '<<downCrossVisible<<'\n';
     for(const auto& e:items)f<<e.x<<' '<<e.y<<' '<<e.size<<' '<<e.color<<' '<<e.visible<<'\n';
     f.close();return f&&MoveFileExW(path.c_str(),(root/L"osd-layout.txt").c_str(),MOVEFILE_REPLACE_EXISTING);
 }
 inline bool load(){
     std::ifstream f(root/L"osd-layout.txt");int v=0,on=1,style=0,downStyle=4,downVisible=1;auto candidate=defaults;
-    if(!(f>>v>>on>>style)||(v<1||v>7)||on<0||on>1||style<0||style>(v>=6?5:2))return false;
+    if(!(f>>v>>on>>style)||(v<1||v>8)||on<0||on>1||style<0||style>(v>=6?5:2))return false;
     int face=0;if(v>=2&&(!(f>>face)||face<0||face>=8))return false;
     if(v>=6&&(!(f>>downStyle)||downStyle<0||downStyle>5))return false;
     if(v>=7&&(!(f>>downVisible)||downVisible<0||downVisible>1))return false;
-    for(int i=0;i<(v>=5?itemCount:v==4?13:v==3?11:10);++i){auto& e=candidate[i];int visible=0;if(!(f>>e.x>>e.y>>e.size>>e.color>>visible)||!std::isfinite(e.x)||!std::isfinite(e.y)||e.x<0||e.x>1||e.y<0||e.y>1||e.size<14||e.size>72||e.color<0||e.color>4||visible<0||visible>1)return false;e.visible=visible!=0;}
+    for(int i=0;i<(v>=8?itemCount:v>=5?14:v==4?13:v==3?11:10);++i){auto& e=candidate[i];int visible=0;if(!(f>>e.x>>e.y>>e.size>>e.color>>visible)||!std::isfinite(e.x)||!std::isfinite(e.y)||e.x<0||e.x>1||e.y<0||e.y>1||e.size<14||e.size>72||e.color<0||e.color>4||visible<0||visible>1)return false;e.visible=visible!=0;}
     std::string extra;if(v>=6&&(f>>extra))return false;
     items=candidate;enabled=on!=0;crossStyle=style;fontChoice=face;downCrossStyle=downStyle;downCrossVisible=downVisible!=0;return true;
 }
@@ -296,19 +313,24 @@ inline void circle(HDC dc,int x,int y,int radius,COLORREF color){
     SelectObject(dc,brush);
 }
 inline std::wstring grenadeText(const Data& d){return d.grenadeRemaining<0?L"GRENADES INF":L"GRENADES "+std::to_wstring(d.grenadeRemaining);}
+inline std::wstring batteryText(const Data& d){wchar_t text[96]{};
+    const auto state=d.batteryCritical||d.batteryDepleted?L" LAND":d.batteryWarning?L" LOW":L"";
+    swprintf_s(text,L"BAT%s %.0f%% %.1fV %.0fA %.0fmAh",state,d.batteryPercent,d.batteryVoltage,d.batteryCurrent,d.batteryUsed);return text;
+}
 inline void draw(HDC dc,RECT area,bool sample){
     const double w=area.right-area.left,h=area.bottom-area.top;
     Data d=data;if(sample&&!d.active){d={true,64,25,120,10,12,85,35,125,2.1,42,true,63,false,0,true,86,true,28.9,false,true,3};}
-    if(sample)d.cameraDown=previewCameraDown;
+    if(sample){d.cameraDown=previewCameraDown;if(!d.batteryEnabled){d.batteryEnabled=true;d.batteryPercent=85;d.batteryVoltage=23.4;d.batteryCurrent=12;d.batteryUsed=225;}}
     SetBkMode(dc,TRANSPARENT);
     for(int i=0;i<itemCount;++i){const auto& e=items[i];
         if(!itemVisible(i,d)||(i==3&&d.cameraDown)||(i==10&&!d.signalEnabled&&!sample)||
            (i==11&&!sample&&(!d.hpEnabled||d.signalLost||cursorMode))||
            (i==12&&!sample&&(!d.detectorEnabled||d.signalLost||cursorMode))||
-           (i==13&&!sample&&(!d.grenadeEnabled||d.signalLost||cursorMode))){bounds[i]={};continue;}
+           (i==13&&!sample&&(!d.grenadeEnabled||d.signalLost||cursorMode))||
+           (i==14&&!sample&&(!d.batteryEnabled||d.signalLost||cursorMode))){bounds[i]={};continue;}
         const int px=static_cast<int>(e.x*w),py=static_cast<int>(e.y*h);
         const int sz=std::clamp(static_cast<int>(e.size*h/900.0),10,90);
-        const int colorIndex=i==11&&d.hpPercent<=25?4:e.color;
+        const int colorIndex=(i==11&&d.hpPercent<=25)||(i==14&&(d.batteryCritical||d.batteryDepleted))?4:i==14&&d.batteryWarning?2:e.color;
         const auto color=colors[colorIndex];wchar_t text[100]{};
         if(i==3){
             const double a=-d.roll*3.141592653589793/180;
@@ -345,6 +367,7 @@ inline void draw(HDC dc,RECT area,bool sample){
                 else swprintf_s(text,L"DETECTOR  %.1f m",d.artifactDistance);
             }
             if(i==13)swprintf_s(text,L"%s",grenadeText(d).c_str());
+            if(i==14)swprintf_s(text,L"%s",batteryText(d).c_str());
             auto old=SelectObject(dc,font(sz));SIZE extent{};GetTextExtentPoint32W(dc,text,static_cast<int>(wcslen(text)),&extent);
             const bool bitmap=fontChoice==1&&loadBetaflight();if(bitmap)extent=bitmapText(dc,text,0,0,sz,colorIndex,false);
             const int x=std::clamp(px-static_cast<int>(extent.cx)/2,0,std::max(0,static_cast<int>(w)-static_cast<int>(extent.cx))),y=std::clamp(py-static_cast<int>(extent.cy)/2,0,std::max(0,static_cast<int>(h)-static_cast<int>(extent.cy)));

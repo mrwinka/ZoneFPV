@@ -64,7 +64,7 @@ int main(){
     const auto expectedItems=osd::items;assert(osd::save());const auto expectedLayout=layoutFile();
     osd::screenAspect=16.0/9;osd::createEditor(nullptr);
     const auto h=osd::editor.load();assert(h&&IsWindow(h)&&!IsWindowVisible(h)&&!osd::editing&&!osd::overlay);
-    assert(SendMessageW(osd::list,LB_GETCOUNT,0,0)==14);
+    assert(SendMessageW(osd::list,LB_GETCOUNT,0,0)==osd::itemCount);
     assert(SendMessageW(osd::styleBox,CB_GETCOUNT,0,0)==6&&SendMessageW(osd::downStyleBox,CB_GETCOUNT,0,0)==6);
     SendMessageW(osd::downStyleBox,CB_SETCURSEL,5,0);SendMessageW(h,WM_COMMAND,MAKEWPARAM(210,CBN_SELCHANGE),reinterpret_cast<LPARAM>(osd::downStyleBox));
     assert(osd::downCrossStyle==5&&osd::crossStyle==2&&osd::previewCameraDown);

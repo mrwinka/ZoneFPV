@@ -14,9 +14,12 @@ assert(client:load('/Game/Test.Test')==asset and blockingCalls==1)
 assert(client:load('/Game/Test.Test')==asset and blockingCalls==1 and registryCalls==1)
 LoadAsset=function()return asset,true,true end
 assert(M.new():load('/Game/Test.Test')==asset and blockingCalls==1)
+LoadAsset=function()return nil,false,false end
+StaticFindObject=function(path)if path=='/Script/Engine:Default__KismetSystemLibrary'then return library end end
+assert(M.new():load('/Game/Test.Test')==asset and blockingCalls==2,'Colon-only native CDO lookup retains the same cooked soft-load fallback')
 LoadAsset=function()error('Function LoadAsset can only be called from within the game thread')end
 local result,why=M.new():load('/Game/Test.Test')
-assert(not result and why:find('game thread',1,true) and blockingCalls==1)
+assert(not result and why:find('game thread',1,true) and blockingCalls==2)
 LoadAsset=function()return nil,false,false end
 function library:LoadAsset_Blocking()error('package unavailable')end
 result,why=M.new():load('/Game/Test.Test');assert(not result and why:find('registry found=false') and why:find('package unavailable'))

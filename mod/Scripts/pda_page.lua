@@ -2,6 +2,10 @@
 -- BookViewBase rejects ordinary panels, even when they are Switcher children.
 local M={}
 local owned=setmetatable({}, {__mode='k'})
+function M.forget(view)
+    local previous=view and owned[view]
+    if previous then previous.destroyed=true;owned[view]=nil end
+end
 local function read(o,k)local ok,v=pcall(function()return o[k]end);if ok then return v end end
 local function invoke(o,k,...)
     return o[k](o,...)
@@ -124,11 +128,16 @@ function M.new(view,controller,index,library)
             if valid(self.widget)then call(self.widget,'RemoveFromParent')end
             return false,self.failure
         end
+        function host:abandon()
+            -- The native owner was replaced/recycled. Drop authority without
+            -- touching its old widget hierarchy or dispatching UI callbacks.
+            self.destroyed=true
+            if owned[view]==self then owned[view]=nil end
+        end
         function host:destroy()
             if self.destroyed then return end
-            self.destroyed=true
+            self:abandon()
             if valid(self.widget)then call(self.widget,'RemoveFromParent')end
-            if owned[view]==self then owned[view]=nil end
         end
         owned[view]=host
         return host

@@ -9,6 +9,9 @@ local focusState={}
 local inputStall=dofile(here..'input_stall_guard.lua').new()
 local publishAudio=dofile(here..'audio.lua').new(root)
 local cfg=dofile(here..'config.lua')
+local batteryModel=dofile(here..'battery.lua')
+local batteryStorage=dofile(here..'battery_settings.lua')
+local batterySettings=batteryStorage.load(root)
 local radioLink=dofile(here..'radio_link.lua')
 local radioSettings=radioLink.load(root)
 local experimentsSettings=dofile(here..'experiments_settings.lua')
@@ -84,6 +87,7 @@ local flightSettings=dofile(here..'flight_settings.lua')
 flightSettings.load(root,cfg)
 flight.validate(cfg)
 local helpers=require('UEHelpers')
+local localController=dofile(here..'local_controller.lua').new(helpers.GetPlayerController)
 local calibration,calibrationDevice
 local function loadCalibration()
     calibration=nil
@@ -248,6 +252,14 @@ local function executeCommand(command)
     if flashlight then return setFeature('flashlightEnabled',flashlight=='1')end
     local signal=command:match('^FPVSignal (.+)$')
     if signal then return radioLink.save(root,radioSettings,signal) end
+    local batteryValue=command:match('^FPVBattery (.+)$')
+    if batteryValue then
+        local before=string.format('%s/%d/%d',tostring(batterySettings.enabled),batterySettings.capacity,batterySettings.cells)
+        if not batteryStorage.save(root,batterySettings,batteryValue)then return false end
+        local after=string.format('%s/%d/%d',tostring(batterySettings.enabled),batterySettings.capacity,batterySettings.cells)
+        if session and before~=after then exit('battery changed; re-enter FPV')end
+        return true
+    end
     local impactValue=command:match('^FPVImpact (.+)$')
     if impactValue then
         local saved,value=impactSettings.save(root,impactValue)
@@ -269,7 +281,7 @@ local function executeCommand(command)
     end
     if command=='FPVBinoculars' then
         if session then log('Exit FPV before requesting binoculars.');return false end
-        return binoculars.give(helpers.GetPlayerController(),helpers.GetKismetSystemLibrary(),log)
+        return binoculars.give(localController:get(os.clock()),helpers.GetKismetSystemLibrary(),log)
     end
     local distance=command:match('^FPVDistance ([0-6])$')
     if distance then
@@ -330,7 +342,7 @@ local function executeCommand(command)
         local speed,tilt=flightSettings.parse(values)
         return speed and flightSettings.save(root,cfg,speed,tilt) or false
     end
-    local controller=helpers.GetPlayerController()
+    local controller=localController:get(os.clock())
     if not valid(controller) or not valid(controller.Pawn) then return false end
     local library=helpers.GetKismetSystemLibrary()
     if not valid(library) then return false end
@@ -350,6 +362,7 @@ local cameraUpdates,cameraTime,cameraGap=0,0,0
 local request,resetRequested=false,false
 local pendingEntry=false
 local sensorFrame=0
+local readFrameInput,inputFrameCounts=inputReader.frame(function()return inputReader.read(root..'input.txt')end,input.parse)
 local lastPacket,lastChange,lastButton,lastToggle=nil,0,false,-10
 local legacyButtonPrimed=false
 local pdaOpen,pdaAction=false,nil
@@ -357,7 +370,7 @@ local readActions=dofile(here..'action_bindings.lua').new(
     function()return inputReader.read(root..'action-input.txt')end,os.clock,os.time)
 local actionChannelSeen,lastActionAllowed=false,false
 local externalMenu=dofile(here..'external_menu_guard.lua').new(
-    function()return inputReader.read(root..'input.txt')end,input.parse,os.clock,os.time)
+    function()return readFrameInput(sensorFrame)end,function(sample)return sample end,os.clock,os.time)
 local navigationKeys=dofile(here..'pda_navigation_keys.lua').new(
     function()return inputReader.read(root..'pda-navigation.txt')end,os.clock,os.time)
 local pdaSettings=dofile(here..'pda_settings.lua').new(root)
@@ -367,7 +380,7 @@ local pda=dofile(here..'pda_menu.lua').new{
     navigationKeys=navigationKeys,
     snapshot=function()return {cfg=cfg,options=options,features=features,experiments=experiments,radio=radioSettings,
         vision=visionMode,visionEnabled=session and session.visionEnabled~=false or not session and not holdMode('vision',8),
-        keys=pilot.keys,actionModes=actionModes,impact=impactMultiplier,distance=distanceSelection,collectRange=experiments.collectRange,armament=armament,session=session,packet=lastPacket,
+        keys=pilot.keys,actionModes=actionModes,impact=impactMultiplier,distance=distanceSelection,collectRange=experiments.collectRange,armament=armament,batterySettings=batterySettings,session=session,packet=lastPacket,
         weather=selectedWeather,hour=selectedHour,anomalyStyle=anomalyStyle,resources=resourceGuard.sample,resourceLevel=resourceGuard.level,
         telemetry=session and session.flight and telemetry.sample(session,cfg,flight) or nil,
         settings=pdaSettings:snapshot(),osd=pdaOSD:snapshot()}end,
@@ -381,15 +394,12 @@ local pda=dofile(here..'pda_menu.lua').new{
         pdaAction=action;return true,'Закройте КПК для выполнения.'
     end
 }
-local pdaController,nextPdaControllerRead
+local pdaController
 local function updatePDA(now)
     pdaSettings:update(now)
-    -- GetPlayerController enumerates the global UObject pool in UE4SS helpers.
-    -- A live flight already owns the controller; idle discovery needs only 2Hz.
-    if session then pdaController=session.pc
-    elseif not nextPdaControllerRead or now>=nextPdaControllerRead then
-        nextPdaControllerRead=now+.5;pdaController=helpers.GetPlayerController()
-    end
+    -- A flight already owns its controller. In character mode follow the
+    -- local player's live backlink instead of enumerating all game UObjects.
+    pdaController=session and session.pc or localController:get(now)
     local controller=pdaController
     pdaOpen=pda:update(now,controller)
     if pdaAction and not pdaOpen then
@@ -402,7 +412,6 @@ local function combatOptions(s)
     local value={};for k,v in pairs(experiments)do value[k]=v end
     value.reaction=false;return value
 end
-local lastPacketLine,lastParsedPacket
 local nextGodUpdate
 local clock=os.clock
 fpvParticles.clock=clock
@@ -419,12 +428,7 @@ local function markStage(name)
     stage=name;stageStarted=now
 end
 local function packet(actionPacket)
-    local line=inputReader.read(root..'input.txt')
-    local p
-    if line then
-        if line~=lastPacketLine then lastPacketLine=line;lastParsedPacket=input.parse(line) end
-        p=lastParsedPacket
-    end
+    local p=readFrameInput(sensorFrame)
     -- Atomic replacement can briefly deny opening the file on Windows.
     -- Keep the previous sample only within the existing 250 ms freshness limit.
     p=p or lastPacket
@@ -602,7 +606,7 @@ local function enter(p)
     end
     if pdaOpen then log('Close the PDA before starting FPV.');return end
     if resourceGuard.level>=2 then log('FPV unavailable: '..(resourceGuard.reason or 'critical resource pressure')..'.');return end
-    pc=waiting and pdaController or helpers.GetPlayerController()
+    pc=waiting and pdaController or localController:get(clock())
     if not valid(pc) or not valid(pc.Pawn) then log('Load a save first.');return end
     gameplay=StaticFindObject('/Script/Engine.Default__GameplayStatics')
     system=helpers.GetKismetSystemLibrary()
@@ -647,6 +651,7 @@ local function enter(p)
     s.camera.CameraComponent.bConstrainAspectRatio=false
     s.camera:SetActorEnableCollision(false)
     s.flight=flight.new(position,rotation.Yaw)
+    s.battery=batteryModel.new(batterySettings);s.flight.battery=s.battery
     local payload=droneWeapons.start(s,armament,gameplay,log)
     if payload.failure then
         log('Drone armament unavailable: '..tostring(payload.failure))
@@ -683,7 +688,7 @@ local function enter(p)
     s.lastWorldTime=gameplay:GetTimeSeconds(pc);s.lastRealTime=clock()
     lastToggle=clock()
     log('FPV active. Use the assigned pilot action to return and reset action to return the drone to launch. Controller calibration '..(calibration and 'loaded' or 'DEFAULT AETR'))
-    log('ZoneFPV 0.3.0 RC1: native movement tick retained; equipment ancestor ownership and delayed NPC readiness guarded.')
+    log('ZoneFPV 0.3.0 RC2: LiPo load model, kamikaze feedback sources and verified attacker aggression cleanup.')
 end
 local function collide(s,old)
     if not session or session.pendingDetonation then return false end
@@ -732,23 +737,29 @@ local function actionsAllowed(p)
     return true
 end
 local function update()
-    markStage('menu and god mode')
+    markStage('menu commands')
     sensorFrame=sensorFrame+1
     local tickNow=clock()
     environment(tickNow)
+    markStage('PDA and settings')
     updatePDA(tickNow)
+    markStage('visual recovery and grenades')
     local currentWorld
     if valid(pdaController)then pcall(function()currentWorld=pdaController:GetWorld()end)end
     visualGuard.updateRecovery(tickNow,currentWorld,pdaController)
     -- Released grenades keep their game-time fuse after the pilot leaves FPV.
     -- They share this one game-thread callback rather than owning a Lua worker.
     droneWeapons.update(tickNow,gameplay,log,currentWorld)
+    markStage('external menu input locks')
     externalMenu:update(session and session.pc or pdaController)
+    markStage('resource polling')
     resourceGuard:update(tickNow,session~=nil)
+    markStage('vision prewarm')
     if resourceGuard.level>=2 then
         pendingEntry=false;vision.clearPrewarm()
     elseif not session then warmVision(pdaController)end
     if session and resourceGuard.level>=2 then exit('resource pressure: '..(resourceGuard.reason or 'critical resource pressure'));return end
+    markStage('god mode')
     -- Console commands and controller discovery are comparatively expensive.
     -- Poll slowly and godMode applies only on an actual option/pawn change.
     if not nextGodUpdate or tickNow>=nextGodUpdate then
@@ -761,6 +772,7 @@ local function update()
         end
         nextGodUpdate=tickNow+0.25
     end
+    markStage('input and actions')
     local actionPacket=readActions()
     local p=packet(actionPacket)
     if p and pdaOpen then
@@ -830,6 +842,7 @@ local function update()
     end
     if not session and not pendingEntry then pilotHoldPending=false end
     if not session then resetRequested=false;return end
+    markStage('flight ownership and teleports')
     updateHeldActions(held)
     local s=session
     if s.mode~=cfg.flight_mode then exit('flight mode changed; re-enter FPV');return end
@@ -844,6 +857,7 @@ local function update()
         exit('external teleport: control returned at game destination');return
     end
     if gameplay:IsGamePaused(s.pc) and not p.menu and not p.paused then exit('pause/menu');return end
+    markStage('flight movement and time')
     local wasFrozen=s.freezeOwned
     worldFreeze.set(s,options.freeze,gameplay)
     if valid(s.hud) and s.hud.bShowHUD then s.hud.bShowHUD=false end
@@ -881,7 +895,7 @@ local function update()
     if resetRequested and not inputPaused then
         resetRequested=false
         if not inputPaused and not (s.radio and s.radio.lost) then
-            s.flight=flight.new(s.origin,s.startYaw);s.radio=nil;s.cameraDirty=true
+            s.flight=flight.new(s.origin,s.startYaw);s.flight.battery=s.battery;s.radio=nil;s.cameraDirty=true
         end
     end
     local u=input.controls(p,cfg,calibration)
@@ -899,12 +913,19 @@ local function update()
     if not inputPaused then s.throttle=cfg.flight_mode=='3d' and (u.throttle*2-1) or u.throttle end
     if dt>0 and not inputPaused then s.flightSeconds=(s.flightSeconds or 0)+math.min(dt,1) end
     markStage('physics and collision traces')
-    if dt>0 and not inputPaused then flight.advance(s.flight,u,cfg,dt,collide) end
+    if dt>0 and not inputPaused then
+        droneCollision.beginFrame(s,math.floor((s.flight.accumulator+math.min(dt,0.1)+1e-12)/cfg.step))
+        flight.advance(s.flight,u,cfg,dt,collide)
+    end
     if s.pendingDetonation then
         local position=s.pendingDetonation;s.pendingDetonation=nil
         local fired,code=droneWeapons.detonate(s,position,gameplay,log)
         exit(fired and 'kamikaze impact' or ('kamikaze payload unavailable: '..tostring(code)))
         return
+    end
+    if s.battery and s.battery.enabled and s.battery.depleted then
+        if not s.batteryReported then log('Battery depleted: motors stopped; returning control after emergency fall');s.batteryReported=true end
+        if s.battery.emptySeconds>=3 then exit('battery depleted');return end
     end
     -- Hazards use this frame's actual movement segment, and the hit proxy moves
     -- to the completed flight position before checking incoming attack damage.
@@ -949,6 +970,7 @@ local function update()
     end
     -- Stage increased streaming and explicitly report temporary protection.
     -- The saved selection is retained for the next safe flight.
+    markStage('world distance')
     worldDistance.update(s,system,distanceSelection,log,realNow,resourceGuard.streamingLimited~=false,resourceGuard.sample)
     markStage('camera effects')
     visualGuard.update(s,realNow,system,options.npcs,selectedWeather=='Clearly')
@@ -1023,6 +1045,9 @@ local function pump()
                     for _,name in ipairs(names)do local metric=stageStats[name]
                         f:write(string.format('stage=%s calls=%d avg_ms=%.3f max_ms=%.3f\n',name,metric.count,metric.total/metric.count,metric.max))
                     end
+                    f:write(string.format('controller_discoveries=%d controller_cache_hits=%d controller_rebindings=%d\n',
+                        localController.discoveries,localController.cacheHits,localController.rebindings))
+                    f:write(string.format('input_frame_reads=%d input_frame_parses=%d\n',inputFrameCounts.reads,inputFrameCounts.parses))
                     local metrics=session and session.worldExperiments and session.worldExperiments.performance
                     if metrics then for _,key in ipairs({'lookupMs','discoveryMs','refreshMs','hazardsMs','selectionMs'})do
                         if type(metrics[key])=='number' then f:write(string.format('world_%s=%.3f\n',key,metrics[key])) end

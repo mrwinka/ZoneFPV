@@ -15,7 +15,7 @@ void concussionFixtureTests() {
     alignas(8) std::array<unsigned char,0x80> collection{};
     alignas(8) std::array<unsigned char,0x100> instance{},otherInstance{};
     alignas(8) std::array<unsigned char,4*24> slots{};
-    alignas(8) std::array<unsigned char,3*28> parameters{};
+    alignas(8) std::array<unsigned char,8*28> parameters{};
     const auto put=[](auto& bytes,std::size_t offset,const auto& value){std::memcpy(bytes.data()+offset,&value,sizeof(value));};
     const auto worldAddress=reinterpret_cast<std::uintptr_t>(world.data());
     const auto collectionAddress=reinterpret_cast<std::uintptr_t>(collection.data());
@@ -162,6 +162,55 @@ void concussionFixtureTests() {
         assert(concussionSetterHook(instance.data(),name,.17f) && concussionForwardedValue==.17f);
     }
     quickConcussionInstance.store(0);
+    // Reproduce the real dirt path: all five surface amplitudes live in the
+    // same MPC, independently of any CameraComponent blendable membership.
+    // Literal7 controls must acquire every key before any late-write masking.
+    const std::array<std::uint64_t,5> blasts={1001,1002,1003,1004,1005};
+    for (std::size_t i=0;i<blasts.size();++i) put(parameters,(3+i)*28,blasts[i]);
+    put(collection,0x40,8);
+    std::snprintf(packet,sizeof(packet),"ZFPVC70 70 %llx %llx 123 789 1001 1002 1003 1004 1005\n",
+        static_cast<unsigned long long>(worldAddress),static_cast<unsigned long long>(collectionAddress));
+    parsed=ConcussionState{};
+    assert(concussionParseControl(packet,parsed) && parsed.blastNames==blasts && concussionFindInstance(parsed));
+    parsed.ready=true;parsed.refreshed=GetTickCount64();concussion=parsed;quickConcussionInstance.store(instanceAddress);
+    for (int frame=0;frame<240;++frame) {
+        for (const auto name:blasts) {
+            assert(concussionSetterHook(instance.data(),name,.85f) && concussionForwardedValue==0);
+            assert(concussionSetterHook(instance.data(),name|(1ull<<32),.51f) && concussionForwardedValue==.51f);
+            assert(concussionSetterHook(otherInstance.data(),name,.61f) && concussionForwardedValue==.61f);
+        }
+        assert(concussionSetterHook(instance.data(),foreignName,.37f) && concussionForwardedValue==.37f);
+    }
+    assert(concussion.blocked==1200);
+    put(slots,2*24+16,303);
+    for (const auto name:blasts) assert(concussionSetterHook(instance.data(),name,.45f) && concussionForwardedValue==.45f);
+    put(slots,2*24+16,302);
+    concussion.refreshed=GetTickCount64()-leaseMilliseconds-1;
+    for (const auto name:blasts) assert(concussionSetterHook(instance.data(),name,.29f) && concussionForwardedValue==.29f);
+    assert(concussion.blocked==1200);
+    auto incomplete=parsed;incomplete.blastNames[4]=999;assert(!concussionFindInstance(incomplete));
+    incomplete=parsed;incomplete.blastNames[4]=blasts[0];assert(!concussionFindInstance(incomplete));
+    incomplete=parsed;incomplete.blastNames[4]=targetName;assert(!concussionFindInstance(incomplete));
+    incomplete=parsed;incomplete.blastNames[0]=0;assert(!concussionFindInstance(incomplete));
+    for (const auto* invalid:{
+        "ZFPVC70 70 10000 20000 123 789 1001 1002 1003 1004", // partial list
+        "ZFPVC70 70 10000 20000 123 789 1001 1002 1003 1004 1005 1006", // widened scope
+        "ZFPVC70 70 10000 20000 123 789 1001 1002 1003 1004 1004", // duplicate
+        "ZFPVC70 70 10000 20000 123 789 1001 1002 1003 1004 123", // old target duplicate
+        "ZFPVC70 70 10000 20000 123 789 1001 1002 1003 1004 0", // None
+        "ZFPVC70 70 10000 20000 123 789 1001 1002 1003 1004 4294967295",
+        "ZFPVC70 70 10000 20000 123 789 1001 1002 1003 1004 4294968297", // overflow cannot wrap
+        "ZFPVC70 70 10000 20000 123 789 1001 1002 1003 1004 +1005",
+        "ZFPVC70 70 10000 20000 123 789 1001 1002 1003 1004 1005 garbage",
+        "ZFPVC44 70 10000 20000 123 0 789 0 1001 1002 1003 1004 1005"}) {
+        assert(!concussionParseControl(invalid,parsed));
+    }
+    quickConcussionInstance.store(0);
+    for (const auto name:blasts) assert(concussionSetterHook(instance.data(),name,.17f) && concussionForwardedValue==.17f);
+    // Parsing a legacy packet after7 must reset all previous extra names.
+    assert(concussionParseControl("ZFPVC21 71 10000 20000 123 0",parsed));
+    for (const auto name:parsed.blastNames) assert(!name);
+    std::cout<<"PASS native seven-key blast MPC: literal ZFPVC70, 1200 late surface writes zeroed; foreign effects/instances, numbered FNames, serial reuse, expiry/disarm pass through; all7 same-collection membership required, malformed/partial/duplicate/widened/overflow controls rejected, legacy resets extra scope\n";
     // The standalone test executable cannot arm the real game ABI profile.
     assert(!verifiedImageIdentity(GetModuleHandleW(nullptr)));
     concussion=ConcussionState{};concussionArrayGlobals={};originalConcussionSetter=nullptr;

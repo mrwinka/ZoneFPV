@@ -53,13 +53,13 @@ do
     local counts={3,2,0,-1,0,0}
     for index,line in ipairs(packets)do
         local packet=fields(line)
-        assert(#packet==26 and packet[1]==5 and packet[2]==index and packet[26]==index and packet[25]==0)
+        assert(#packet==36 and packet[1]==6 and packet[2]==index and packet[36]==index and packet[25]==0)
         assert(packet[23]==(index<=4 and 1 or 0)and packet[24]==counts[index])
         assert(packet[3]==(index<6 and 1 or 0))
     end
     if arg and arg[1]then local fixture=assert(rawOpen(arg[1],'w'));assert(fixture:write(packets[3]));fixture:close()end
     s.weapons=nil
-    print('PASS live grenade count, zero and unlimited telemetry;26-fieldv5 framing, immediate ammo updates, idle clearing and actual packet fixture')
+    print('PASS live grenade count, zero and unlimited telemetry;36-field v6 framing, immediate ammo updates, idle clearing and actual packet fixture')
     local viewPackets={}
     io.open=function()return {write=function(_,line)viewPackets[#viewPackets+1]=fields(line);return true end,close=function()return true end}end
     publish=telemetry.new('view-fixture/',flight,cfg)
@@ -219,6 +219,7 @@ print('PASS unreflected flags and oversized modifier arrays fail safely without 
 local oldFName,oldFind=FName,StaticFindObject
 local names={ConcussionIntensity=11,BlinkAlpha=12,RainIntensity=13,RadiationNoiseIntensity=14,RadiationSepiaIntensity=15,RadiationRandom=16,RadiationRandomPulsation=17,VignetteIntensity=18}
 names.SuppressionIntensity=22
+for index,surface in ipairs({'Water','Dirt','Rock','Wood','Sand'})do names['Explosion'..surface..'Intensity']=22+index end
 names['Noise intensity']=19;names['grain power']=20;names['Noise edges power']=21
 FName=function(name)
  assert(names[name]);return {GetComparisonIndex=function()return names[name]end,
@@ -387,6 +388,7 @@ end
 local radiation,radiationHDR=radiationMID(radiationAsset),radiationMID(radiationHDRAsset)
 local priorCollectionFind=StaticFindObject
 local collection=obj({values={[14]=.7,[15]=.4,[16]=.8,[17]=.6,[18]=.9,[13]=.55,[11]=.35,[22]=.81}})
+for index=23,27 do collection.values[index]=0 end
 local library=obj({writes=0})
 function library:GetScalarParameterValue(context,asset,name)
  assert(context==s.world and asset==collection);return asset.values[name:GetComparisonIndex()]

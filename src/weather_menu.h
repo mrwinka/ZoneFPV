@@ -58,6 +58,7 @@ inline int bindingPage(int){return 9;}
 inline void cancelBindingCapture(const wchar_t* message=nullptr);
 inline HWND signalBox=nullptr,signalRange=nullptr,signalMultiplierBox=nullptr,impactMultiplierBox=nullptr;
 inline HWND artifactRange=nullptr,flashlightPermission=nullptr,cameraDownPermission=nullptr;
+inline HWND batteryEnabled=nullptr,batteryCapacity=nullptr,batteryCells=nullptr;
 inline HWND weaponModeBox=nullptr,weaponPower=nullptr,grenadeTypeBox=nullptr,grenadeCharges=nullptr,weaponImpact=nullptr;
 inline HWND actionModeBoxes[action_bindings::actionCount]{};
 inline HWND sectionBox=nullptr;
@@ -71,7 +72,7 @@ inline int currentGroup=0;
 inline int groupOf(int page){for(int g=0;g<5;++g)for(const auto section:groupSections[g])if(section==page)return g;return 0;}
 inline const wchar_t* pageNames[]={L"Основное",L"Пульт",L"Камера",L"OSD",L"Мир",L"Связь",L"Сканер",L"Прочность",L"Боевой режим",L"Кнопки",L"Общие"};
 inline const wchar_t* pageIntros[]={
-    L"Скорость, режим полёта и поведение дрона.",
+    L"Батарея LiPo: новый вход в FPV — полный заряд.\nВозврат к старту (F9) не заряжает батарею.",
     L"Выберите пульт, затем профиль или калибровку стиков.",
     L"Наклон, ночное и тепловое видение, изображение.",
     L"Экранные показания, их размер и положение.",
@@ -298,6 +299,8 @@ inline std::wstring sliderText(const SliderSetting& item){
     if(item.id==151){wchar_t meters[32]{};swprintf_s(meters,L"%.1f m",item.value);return meters;}
     if(item.id==174)return grenadeThumbToCharges(static_cast<int>(item.value))==0?L"∞":std::to_wstring(grenadeThumbToCharges(static_cast<int>(item.value)));
     if(item.id==180)return std::to_wstring(static_cast<int>(item.value))+L" km/h";
+    if(item.id==182)return std::to_wstring(static_cast<int>(item.value))+L" mAh";
+    if(item.id==183)return std::to_wstring(static_cast<int>(item.value))+L"S";
     wchar_t text[32]{};swprintf_s(text,L"%.2f×",item.value);return text;
 }
 inline void setSliderValue(HWND handle,double value){
@@ -314,7 +317,8 @@ inline HWND slider(const wchar_t* caption,int y,int id,double value,int maximum=
     const auto badge=control(L"STATIC",L"",SS_RIGHT,580,y,72,22);
     const auto handle=control(TRACKBAR_CLASSW,L"",TBS_HORZ|TBS_NOTICKS|WS_TABSTOP,178,y+24,474,30,id);
     SendMessageW(handle,TBM_SETRANGEMIN,FALSE,minimum);SendMessageW(handle,TBM_SETRANGEMAX,TRUE,maximum);
-    SendMessageW(handle,TBM_SETPAGESIZE,0,scale==100?25:1);
+    SendMessageW(handle,TBM_SETPAGESIZE,0,id==182?500:scale==100?25:1);
+    if(id==182)SendMessageW(handle,TBM_SETLINESIZE,0,50);
     sliders.push_back({handle,badge,id,minimum,maximum,scale,0,0});setSliderValue(handle,value);return handle;
 }
 inline std::string number(double value){std::ostringstream text;text<<std::fixed<<std::setprecision(6)<<value;return text.str();}
@@ -466,6 +470,23 @@ inline bool parseSignalSettings(std::istream& f,int& enabled,int& range,double& 
     enabled=on;range=meters;multiplier=attenuation;return true;
 }
 struct WeaponSettings{int mode=0;double power=1;int grenade=0,charges=3,impactSpeed=30;};
+struct BatterySettings{bool enabled=true;int capacity=1500,cells=6;};
+inline bool parseBatterySettings(std::istream& file,BatterySettings& result){
+    std::string version,on,capacity,cells,extra;
+    if(!(file>>version>>on>>capacity>>cells)||version!="1"||(on!="0"&&on!="1")||(file>>extra))return false;
+    const auto integer=[](const std::string& text,int& value){
+        if(text.empty()||text.size()>5||(text.size()>1&&text.front()=='0'))return false;
+        value=0;for(const auto c:text){if(c<'0'||c>'9')return false;value=value*10+c-'0';}return true;
+    };
+    BatterySettings parsed;parsed.enabled=on=="1";
+    if(!integer(capacity,parsed.capacity)||parsed.capacity<300||parsed.capacity>20000||parsed.capacity%50
+        ||!integer(cells,parsed.cells)||parsed.cells<2||parsed.cells>8)return false;
+    result=parsed;return true;
+}
+inline std::string batteryCommand(){
+    return std::string("battery ")+(SendMessageW(batteryEnabled,BM_GETCHECK,0,0)==BST_CHECKED?"1 ":"0 ")
+        +std::to_string(static_cast<int>(sliderValue(batteryCapacity)))+" "+std::to_string(static_cast<int>(sliderValue(batteryCells)));
+}
 inline bool parseWeaponSettings(std::istream& file,WeaponSettings& result){
     std::string version,mode,power,grenade,charges,impact,extra;
     if(!(file>>version>>mode>>power>>grenade>>charges)||version!="1")return false;
@@ -621,6 +642,7 @@ inline void moveSlider(HWND handle,UINT event){
     auto item=sliderSetting(handle);if(!item)return;
     item->value=static_cast<double>(SendMessageW(handle,TBM_GETPOS,0,0))/item->scale;
     if(item->id==180){item->value=std::clamp(std::round(item->value/5)*5,5.,150.);SendMessageW(handle,TBM_SETPOS,TRUE,static_cast<LPARAM>(item->value));}
+    if(item->id==182){item->value=std::clamp(std::round(item->value/50)*50,300.,20000.);SendMessageW(handle,TBM_SETPOS,TRUE,static_cast<LPARAM>(item->value));}
     const auto label=sliderText(*item);SetWindowTextW(item->badge,label.c_str());
     // Preview while dragging; one command at release prevents an input backlog.
     if(event==TB_THUMBTRACK||event==TB_THUMBPOSITION)return;
@@ -632,6 +654,7 @@ inline void moveSlider(HWND handle,UINT event){
     else if(item->id==143)send("impact "+number(item->value));
     else if(item->id==151)send("collectrange "+number(item->value));
     else if(item->id==172||item->id==174||item->id==180)send(weaponCommand());
+    else if(item->id==182||item->id==183)send(batteryCommand());
     else if(item->id==122)send("distance "+std::to_string(static_cast<int>(item->value)));
     else if(item->id==104){if(!applyAudio(static_cast<int>(std::lround(item->value*100))))return;}
     item->committed=item->value;
@@ -694,6 +717,7 @@ inline LRESULT CALLBACK proc(HWND h,UINT message,WPARAM wp,LPARAM lp){
     }
     if(message==WM_CLOSE){hide();return 0;}
     if(message==WM_COMMAND && HIWORD(wp)==BN_CLICKED){
+        if(LOWORD(wp)==181){send(batteryCommand());return 0;}
         if(LOWORD(wp)>=160&&LOWORD(wp)<=163){beginBindingCapture(LOWORD(wp)-160);return 0;}
         if(LOWORD(wp)>=164&&LOWORD(wp)<=167){cancelBindingCapture();assignBinding(LOWORD(wp)-164,0);return 0;}
         if(LOWORD(wp)==169){beginBindingCapture(4);return 0;}
@@ -788,12 +812,14 @@ inline void create(){
     const auto flag=[](int index,const wchar_t* text,int y){experimentFlags[index]=control(L"BUTTON",text,BS_AUTOCHECKBOX|WS_TABSTOP,178,y,474,30,131+index);};
     buildingPage=0;
     label(L"Режим полёта",104);modeBox=combo(132,116,{L"Acro",L"Angle",L"3D"});
-    label(L"Angle: выравнивание. Acro: свободное вращение.\n3D: середина газа — ноль, ниже — обратная тяга.\nСмена режима завершает полёт; войдите в FPV снова.",178,64);
-    speed=slider(L"Множитель скорости",258,105,2);
-    label(L"0 выключает моторы; 2× — обычная скорость.\nИнерция и падение сохраняются.",320,40);
-    option(1,L"Альтернативный режим FPV",372);option(3,L"Пролёт сквозь стены",409);
-    hotStart=control(L"BUTTON",L"Разрешить вход с поднятым газом",BS_AUTOCHECKBOX|WS_TABSTOP,178,446,474,30,114);
-    label(L"Обычный режим подгружает мир возле дрона.\nАльтернативный режим оставляет игрока на старте.\nСмена режима завершает текущий полёт.",495,58);
+    label(L"Angle выравнивает; Acro — свободное вращение; 3D — обратная тяга.\nСмена режима или батареи завершает полёт.",172,40);
+    speed=slider(L"Множитель скорости",220,105,2);
+    label(L"0 выключает моторы; 2× — обычная скорость.",280,22);
+    option(1,L"Альтернативный режим FPV",305);option(3,L"Пролёт сквозь стены",339);
+    hotStart=control(L"BUTTON",L"Разрешить вход с поднятым газом",BS_AUTOCHECKBOX|WS_TABSTOP,178,373,474,30,114);
+    batteryEnabled=control(L"BUTTON",L"Симуляция батареи",BS_AUTOCHECKBOX|WS_TABSTOP,178,407,474,30,181);
+    batteryCapacity=slider(L"Ёмкость батареи",447,182,1500,20000,1,300);
+    batteryCells=slider(L"Количество ячеек",507,183,6,8,1,2);
     buildingPage=1;
     label(L"Устройство управления",104);deviceBox=combo(133,113,{});
     deviceStatus=label(L"",173,36);warning=label(L"",216,42);
@@ -895,6 +921,9 @@ inline void refreshPreferences(){
     {std::string value;double multiplier=2;int angle=25;std::ifstream f(root/L"flight-settings.txt");
         if(f>>value>>angle)parseImpactMultiplier(std::wstring(value.begin(),value.end()),multiplier);
         setSliderValue(speed,multiplier);setSliderValue(tilt,std::clamp(angle,0,60));}
+    {BatterySettings pack;std::ifstream f(root/L"battery-settings.txt");parseBatterySettings(f,pack);
+        SendMessageW(batteryEnabled,BM_SETCHECK,pack.enabled?BST_CHECKED:BST_UNCHECKED,0);
+        setSliderValue(batteryCapacity,pack.capacity);setSliderValue(batteryCells,pack.cells);}
     for(int i=0;i<4;++i){int on=0;std::ifstream f(root/(std::string(optionNames[i])+"-settings.txt"));f>>on;SendMessageW(worldOptions[i],BM_SETCHECK,on==1?BST_CHECKED:BST_UNCHECKED,0);}
     {int on=0;std::ifstream f(root/L"hotstart-settings.txt");f>>on;SendMessageW(hotStart,BM_SETCHECK,on==1?BST_CHECKED:BST_UNCHECKED,0);}
     const auto choice=[&](const wchar_t* name,HWND box,int maximum){int value=0;std::ifstream f(root/name);parseChoice(f,maximum,value);SendMessageW(box,CB_SETCURSEL,value,0);};

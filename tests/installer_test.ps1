@@ -22,7 +22,7 @@ $runtimeConfig="[General]`r`nDefaultExecuteInGameThreadMethod = ProcessEvent`r`n
 [IO.File]::WriteAllText((Join-Path $runtime 'UE4SS-settings.ini'),$runtimeConfig)
 $unicodeModName=-join (@(0x041c,0x043e,0x0434) | ForEach-Object {[char]$_})
 [IO.File]::WriteAllText((Join-Path $runtime 'Mods\mods.txt'),"OtherMod : 1`r`n$unicodeModName : 1`r`nZoneFPV : 0`r`n",[Text.UTF8Encoding]::new($false))
-$preferences=@{'calibration-123.lua'='custom';'calibration.lua'='legacy';'bindings.txt'='117 119 120';'osd-layout.txt'='keep-layout';'controller.txt'='123';'experiment-settings.txt'='1 3 1 1 1 1 0 1 1 1';'impact-settings.txt'='0.5';'signal-settings.txt'='1 1500';'flight-settings.txt'='2 25';'world-distance.txt'='6';'weapon-settings.txt'='1 2 2.25 1 0'}
+$preferences=@{'calibration-123.lua'='custom';'calibration.lua'='legacy';'bindings.txt'='117 119 120';'osd-layout.txt'='keep-layout';'controller.txt'='123';'experiment-settings.txt'='1 3 1 1 1 1 0 1 1 1';'impact-settings.txt'='0.5';'signal-settings.txt'='1 1500';'flight-settings.txt'='2 25';'world-distance.txt'='6';'weapon-settings.txt'='1 2 2.25 1 0';'battery-settings.txt'='1 1 2250 6'}
 foreach($name in $preferences.Keys){[IO.File]::WriteAllText((Join-Path $mod $name),$preferences[$name])}
 $preferences['native-combat-status.txt']='preserve live native diagnostics'
 $preferences['native-visual-status.txt']='preserve live effect diagnostics'

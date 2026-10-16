@@ -96,4 +96,19 @@ assert(not page:attach(fixture.root));assert(#fixture.switcher.children==2 and f
 assert(not page:attach(fixture.root),'Failed host cannot reparent every tick')
 M=setup(2);page=assert(create(M,2));fixture.root.outer=fixture.view.WidgetTree
 assert(not page:attach(fixture.root),'An existing native tree root must never be shared with the owned page')
-print('pda_page_test: passed (native base, initialized tree, exact index, ownership, bounded reuse and failure cleanup)')
+M=setup(2);page=assert(create(M,2));assert(page:attach(fixture.root))
+local abandonedPage,abandonedSwitcher=page.widget,fixture.switcher
+local staleAccesses=0
+abandonedPage.IsValid=function()staleAccesses=staleAccesses+1;error('Recycled page must not be accessed')end
+abandonedPage.RemoveFromParent=function()staleAccesses=staleAccesses+1;error('Recycled page must not be detached')end
+page:abandon();page:abandon();page:destroy()
+assert(staleAccesses==0 and #abandonedSwitcher.children==3,'Abandon releases Lua authority without native cleanup')
+fixture.switcher=obj('ReplacementSwitcher');fixture.switcher.children={table.unpack(fixture.pages)}
+fixture.view.Switcher=fixture.switcher
+local fresh=assert(create(M,2));assert(fresh~=page and creates==2,'Abandon clears owner cache before same-wrapper reuse')
+fresh:destroy()
+
+M=setup(1);fixture.existingRoot=true;assert(not create(M,1))
+fixture.existingRoot=false;M.forget(fixture.view)
+assert(create(M,1),'Forgetting an old owner also releases its failed-construction marker')
+print('pda_page_test: passed (native base, initialized tree, exact index, ownership, bounded reuse, failure cleanup and no-call abandonment)')

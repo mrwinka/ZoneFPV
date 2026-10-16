@@ -15,6 +15,7 @@ local nativeGeometry=dofile(here..'pda_geometry.lua')
 local M={}
 local observerInstalled,blueprintObserverInstalled,observerTarget=false,false,nil
 local pdaBlueprint='/Game/GameLite/FPS_Game/UIRemaster/PDA/W_PDABookView.W_PDABookView_C'
+local pdaBlueprintColon='/Game/GameLite/FPS_Game/UIRemaster/PDA/W_PDABookView:W_PDABookView_C'
 local function invoke(o,k,...)return o[k](o,...)end
 local function call(o,k,...)
     local ok,a,b=pcall(invoke,o,k,...)
@@ -44,7 +45,6 @@ local function each(array,fn)
     end)
 end
 local function color(r,g,b,a)return {R=r,G=g,B=b,A=a or 1}end
-local white,amber=color(.8,.78,.68),color(1,.62,.18)
 local function visible(o)
     if not valid(o)then return false end
     local v=call(o,'GetVisibility')
@@ -52,14 +52,21 @@ local function visible(o)
 end
 local function find(path)local ok,v=pcall(StaticFindObject,path);return ok and valid(v)and v or nil end
 local function list(name)local ok,v=pcall(FindAllOf,name);return ok and v or {} end
-local function isPDAView(view)
-    if not valid(view)or not valid(read(view,'Container'))or not valid(read(view,'Switcher'))or not valid(read(view,'NavigationPanel'))then return false end
-    -- Installed cooked W_PDABookView and EWidgetNameEx::PDA (11). Do not
-    -- confuse another open native book/menu with the PDA we can extend.
-    if read(view,'WidgetName')==11 then return true end
-    local name=call(call(view,'GetClass'),'GetFName')
-    name=call(name,'ToString')
-    return name=='W_PDABookView_C'or name=='PDAView'
+local function exactPDAClass(view)
+    if not valid(view)then return false end
+    -- Other native books can inherit PDAView too. Only the known concrete
+    -- PDA class (or its exact native class) is an authorized extension host.
+    local class=call(view,'GetClass')
+    if not valid(class)or call(class,'IsAnyClass')~=true then return false end
+    local full=call(class,'GetFullName')
+    local path=type(full)=='string'and (full:match('^%S+%s+(/.+)$')or full)
+    -- The installed UE4SS build prints package/object separators as colons
+    -- (including cooked generated classes), whereas the asset/notification
+    -- path uses a dot. These are the same exact package and class; accepting
+    -- only the asset spelling discarded the real manager-hosted PDA.
+    local actual=path==pdaBlueprint or path==pdaBlueprintColon
+        or path=='/Script/Stalker2.PDAView'or path=='/Script/Stalker2:PDAView'
+    return actual,path
 end
 local function text(o,value)
     if o.lastText==value then return end
@@ -184,6 +191,65 @@ function M.new(opts)
         if self.diagnostics[key]then return end
         self.diagnostics[key]=true;log(message)
     end
+    local function pdaOrdinal()
+        if self.pdaOrdinal~=nil then return self.pdaOrdinal end
+        local now=self.currentNow or 0
+        if now<(self.nextEnumProbe or 0)then return end
+        self.nextEnumProbe=now+5
+        -- The reference SDK's ordinals can differ from the shipping build.
+        -- Resolve the live enum through its two known native path spellings;
+        -- no global object search or guessed ordinal authorizes native writes.
+        for _,path in ipairs({'/Script/Stalker2.EWidgetNameEx','/Script/Stalker2:EWidgetNameEx'})do
+            local enum=find(path)
+            if enum then
+                local ordinal
+                local ok=pcall(function()
+                    enum:ForEachName(function(name,value)
+                        local full=call(name,'ToString')
+                        if type(full)=='string'and full:match('([^:]+)$')=='PDA'
+                            and type(value)=='number'and value>=0 and value<=2147483647 and value%1==0 then
+                            ordinal=value
+                        end
+                    end)
+                end)
+                if ok and ordinal~=nil then
+                    self.pdaOrdinal=ordinal
+                    diagnose('enum-ready','Live EWidgetNameEx.PDA='..ordinal..'; exact PDA class and context checks enabled')
+                    return ordinal
+                end
+            end
+        end
+        diagnose('enum-unavailable','PDA extension paused: live EWidgetNameEx.PDA unavailable; retrying every five seconds without changing native menus')
+    end
+    local function isPDAView(view)
+        local actual,path=exactPDAClass(view)
+        if not actual then
+            -- Log only books with all PDA-like bindings, once per class and
+            -- at most twelve classes per owner. This makes an incompatible
+            -- native host visible without a per-frame/global-object dump.
+            if valid(read(view,'Container'))and valid(read(view,'Switcher'))and valid(read(view,'NavigationPanel'))then
+                local key='identity-class-'..tostring(path)
+                if not self.diagnostics[key]and (self.classDiagnostics or 0)<12 then
+                    self.classDiagnostics=(self.classDiagnostics or 0)+1
+                    diagnose(key,'Native book excluded: class='..tostring(path)..'; WidgetName='..tostring(read(view,'WidgetName')))
+                end
+            end
+            return false
+        end
+        local ordinal=pdaOrdinal()
+        if ordinal==nil then return false end
+        local context=read(view,'WidgetName')
+        if context~=ordinal then
+            diagnose('identity-context','Exact PDA class rejected for non-PDA context: class='..path..'; WidgetName='..tostring(context)..'; expected='..ordinal)
+            return false
+        end
+        if not valid(read(view,'Container'))or not valid(read(view,'Switcher'))or not valid(read(view,'NavigationPanel'))then
+            diagnose('identity-bindings','Exact PDA context is waiting for Container, Switcher and NavigationPanel bindings')
+            return false
+        end
+        diagnose('identity-ready-'..path,'Exact PDA host accepted: class='..path..'; WidgetName='..tostring(context))
+        return true
+    end
     local function ownedByPlayer(widget,pc)
         -- UUserWidget ownership is reflected and is the actual local UI context.
         -- Do not use UE4SS's generic UObject:GetWorld virtual-table call here:
@@ -232,14 +298,54 @@ function M.new(opts)
         slot:SetOffsets({Left=0,Top=0,Right=0,Bottom=0})
         if z then slot:SetZOrder(z)end
     end
-    local function button(parent,caption,fn)
+    local function decoration(parent,x,y,width,height,tint)
+        local w=make('Border',parent);at(w,x,y,width,height)
+        w:SetBrushColor(tint);w:SetVisibility(3) -- visual only, never intercept input.
+        return w
+    end
+    local function button(parent,caption,fn,tint)
         local w=make('Button',parent)
         local ok,err=self.theme:button(w,false,false);assert(ok,err)
-        local t=label(w,caption,17)
-        local value={widget=w,text=t,action=fn,pressed=false}
+        local t=label(w,caption,17,tint)
+        local value={widget=w,text=t,action=fn,pressed=false,tint=tint}
         self.buttons[#self.buttons+1]=value;return value
     end
+    local function attachedIdentity()
+        local binding=self.viewBindings
+        return binding~=nil and isPDAView(self.view)
+            and same(call(self.view,'GetClass'),binding.class)
+            and same(read(self.view,'WidgetTree'),binding.tree)
+            and same(read(self.view,'Container'),binding.container)
+            and same(read(self.view,'Switcher'),binding.switcher)
+            and same(read(self.view,'NavigationPanel'),binding.navigation)
+            and same(read(binding.navigation,'SlotContainer'),binding.tabs)
+    end
+    local function clearPanel()
+        self.root,self.view,self.body,self.buttons,self.rowWidgets,self.sidebar,self.sectionTabs=nil,nil,nil,nil,nil,nil,nil
+        self.preview,self.previewTexts,self.previewLines=nil,nil,nil
+        self.previewLayout=nil
+        self.osdRowWidgets,self.previewBody,self.previewInput,self.previewOutline=nil,nil,nil,nil
+        self.osdItemTitle,self.osdItemScroll,self.osdItemList,self.osdItemButtons,self.osdSelected=nil,nil,nil,nil,nil
+        self.scroll,self.rowList,self.scrolledSection=nil,nil,nil
+        self.theme,self.previousIndex,self.viewBindings,self.surfaceFrame=nil,nil,nil,nil
+        self.previewDrag,self.previewDraft,self.capturePending=nil,nil,nil
+        self.active=false;self.geometrySizes={}
+        self.navigationPending,self.navigationKeys,self.navigationSequences=nil,nil,nil
+    end
+    local function abandon()
+        -- A valid UObject address can now refer to a replaced native screen.
+        -- Do not navigate it, commit edits, or call any cached widget cleanup.
+        local id=call(self.view,'GetAddress');if id then self.rejected[id]=true end
+        if self.tab then self.tab:abandon();self.tab=nil end
+        if self.pageHost then self.pageHost:abandon();self.pageHost=nil end
+        nativeTab.forget(self.view);nativePage.forget(self.view)
+        clearPanel();self.nativeOpen=false;self.openView=nil;self.nextDiscovery=0
+        self.inject=nil;self.selectRequested=false;self.requestUntil=nil
+        settingsContext(false)
+        log('PDA host identity changed; cached handles abandoned without native UI writes')
+    end
     local function show(value,nativeSelection)
+        if self.view and not attachedIdentity()then abandon();return end
         if not value then cancelPreviewDrag();settingsContext(false)end
         if not self.root or not valid(self.body)then return end
         if not value and self.commitSliders then self:commitSliders()end
@@ -264,6 +370,7 @@ function M.new(opts)
     end
     function self:close()show(false)end
     local function detach()
+        if self.view and not attachedIdentity()then abandon();return end
         if self.pageHost and valid(self.view)and call(read(self.view,'Switcher'),'GetActiveWidgetIndex')==self.pageHost.index then
             local sibling=call(read(read(self.view,'NavigationPanel'),'SlotContainer'),'GetChildAt',self.previousIndex or 0)
             local id=read(sibling,'ButtonId')
@@ -273,15 +380,7 @@ function M.new(opts)
         if self.tab then self.tab:destroy();self.tab=nil end
         if self.pageHost then self.pageHost:destroy();self.pageHost=nil end
         if valid(self.root)then call(self.root,'RemoveFromParent')end
-        self.root,self.view,self.body,self.buttons,self.rowWidgets,self.sidebar,self.sectionTabs=nil,nil,nil,nil,nil,nil,nil
-        self.preview,self.previewTexts,self.previewLines=nil,nil,nil
-        self.previewLayout=nil
-        self.osdRowWidgets,self.previewBody,self.previewInput,self.previewOutline=nil,nil,nil,nil
-        self.osdItemTitle,self.osdItemScroll,self.osdItemList,self.osdItemButtons,self.osdSelected=nil,nil,nil,nil,nil
-        self.scroll,self.rowList,self.scrolledSection=nil,nil,nil
-        self.theme,self.previousIndex=nil,nil
-        self.geometrySizes={}
-        self.navigationPending,self.navigationKeys,self.navigationSequences=nil,nil,nil
+        clearPanel()
     end
     local function refresh()
         local snapshot=opts.snapshot()or {}
@@ -306,14 +405,21 @@ function M.new(opts)
         text(self.title,group.label);text(self.description,p.description)
         for i,b in ipairs(self.sectionTabs or {})do
             local section=group.sections[i];b.widget:SetVisibility(section and 0 or 1)
-            if section then text(b.text,section.label);self.theme:button(b.widget,i==self.section,b.hovered==true)end
+            b.background:SetVisibility(section and 3 or 1);b.underline:SetVisibility(section and 3 or 1)
+            if section then
+                local selected=i==self.section
+                text(b.text,section.label);self.theme:button(b.widget,selected,b.hovered==true)
+                b.text.widget:SetColorAndOpacity({SpecifiedColor=selected and self.theme.colors.tabText or b.hovered and self.theme.colors.text or self.theme.colors.muted,ColorUseRule=0})
+                self.theme:tabBacking(b.background,selected,b.hovered==true)
+                b.underline:SetBrushColor(selected and self.theme.colors.transparent or self.theme.colors.rule)
+            end
         end
         for i,b in ipairs(self.sidebar)do
             text(b.text,self.pages[i].label)
             local selected=i==self.page
             b.background:SetBrushColor(selected and self.theme.colors.rowActive or b.hovered and self.theme.colors.hover or self.theme.colors.transparent)
             b.left:SetVisibility(selected and 3 or 2);b.right:SetVisibility(selected and 3 or 2)
-            b.text.widget:SetColorAndOpacity({SpecifiedColor=selected and amber or self.theme.colors.text,ColorUseRule=0})
+            b.text.widget:SetColorAndOpacity({SpecifiedColor=selected and self.theme.colors.amber or b.hovered and self.theme.colors.text or self.theme.colors.navText,ColorUseRule=0})
         end
         local preview=p.id==3
         local rowX,rowWidth=preview and .744 or .272,preview and .228 or .70
@@ -330,6 +436,7 @@ function M.new(opts)
                     local item=p.osdItems[i]
                     text(b.text,item.label)
                     self.theme:button(b.widget,item.selected,b.hovered==true)
+                    b.text.widget:SetColorAndOpacity({SpecifiedColor=item.selected and self.theme.colors.amber or self.theme.colors.text,ColorUseRule=0})
                     b.background:SetBrushColor(item.selected and self.theme.colors.rowActive or b.hovered and self.theme.colors.hover or self.theme.colors.transparent)
                     if item.selected and selectionChanged then call(self.osdItemScroll,'ScrollWidgetIntoView',b.root,false,0,0)end
                 end
@@ -370,7 +477,8 @@ function M.new(opts)
                 call(r.activate.widget,'SetIsEnabled',item.disabled~=true)
                 local fontSize=preview and 14 or 16
                 if r.fontSize~=fontSize then
-                    for _,entry in ipairs({r.caption,r.value,r.activate.text,r.minus.text,r.plus.text})do self.theme:label(entry.widget,fontSize,nil,'body')end
+                    for _,entry in ipairs({r.caption,r.minus.text,r.plus.text,r.clear.text})do self.theme:label(entry.widget,fontSize,self.theme.colors.text,'control')end
+                    for _,entry in ipairs({r.value,r.activate.text,r.mode.text})do self.theme:label(entry.widget,fontSize,self.theme.colors.amber,'control')end
                     r.fontSize=fontSize
                 end
                 local pixels=math.max(100,rowWidth*(bodyWidth or 1600)-16)
@@ -417,6 +525,8 @@ function M.new(opts)
                     end
                 end
                 r.background:SetBrushColor(r.index==self.row and self.theme.colors.rowActive or self.theme.colors.transparent)
+                r.rule:SetBrushColor(r.index==self.row and self.theme.colors.ruleActive or self.theme.colors.rule)
+                r.edge:SetVisibility(r.index==self.row and 3 or 2)
             end
         end
         if self.preview then self.preview:SetVisibility(preview and 4 or 1)end
@@ -642,6 +752,7 @@ function M.new(opts)
         dispatch('osd',{action='selectItem',args={id=id}});refresh()
     end
     local function build(view)
+        assert(isPDAView(view),'Exact PDA class and bindings unavailable')
         self.classes={};self.classPending=true;self.buildStage='resolve UMG classes'
         local names={'CanvasPanel','Border','TextBlock','Button','Slider','EditableTextBox','ScrollBox','VerticalBox','SizeBox'}
         local function accept(name,cls,source)
@@ -700,11 +811,15 @@ function M.new(opts)
         self.classPending=false -- From here failures retain the allocation circuit breaker.
         local container=read(view,'Container');assert(valid(container),'PDA container unavailable')
         self.view,self.buttons,self.rowWidgets,self.sidebar,self.sectionTabs=view,{},{},{},{}
+        self.viewBindings={class=call(view,'GetClass'),tree=read(view,'WidgetTree'),container=container,
+            switcher=read(view,'Switcher'),navigation=read(view,'NavigationPanel'),
+            tabs=read(read(view,'NavigationPanel'),'SlotContainer')}
+        assert(attachedIdentity(),'PDA host bindings changed before construction')
         self.osdRowWidgets={}
         self.slateLibrary=defaultLibrary('SlateBlueprintLibrary')
         self.layoutLibrary=defaultLibrary('WidgetLayoutLibrary')
         self.theme=nativeTheme.new(view)
-        log('Native PDA theme sampled; creating page host')
+        log('Native field instrument assets resolved; creating page host')
         local navigation=read(view,'NavigationPanel')
         local tabs=read(navigation,'SlotContainer')
         local children=call(tabs,'GetAllChildren')
@@ -726,13 +841,17 @@ function M.new(opts)
         self.buttons[1]={widget=tab.button,action=function()show(true);refresh()end,pressed=false}
         self.body=make('Border',self.root);at(self.body,0,0,1,1)
         local styled,styleError=self.theme:page(self.body);assert(styled,styleError)
+        log('Field instrument backing='..tostring(self.theme.backgroundApplied and self.theme.pageBrushPath or 'charcoal fallback')
+            ..'; controlFont='..self.theme.controlFontPath..'; bodyFont='..self.theme.bodyFontPath)
         self.body:SetPadding({Left=0,Top=0,Right=0,Bottom=0})
         local canvas=make('CanvasPanel',self.body)
         local sidebarBackground=make('Border',canvas);at(sidebarBackground,0,0,.25,.915)
-        sidebarBackground:SetBrushColor(color(.019,.019,.017))
+        sidebarBackground:SetBrushColor(self.theme.backgroundApplied and self.theme.colors.panelOverlay or self.theme.colors.sidebar)
         local divider=make('Border',canvas);at(divider,.25,0,.002,.915)
-        divider:SetBrushColor(color(.12,.115,.095))
-        self.sidebarTitle=label(canvas,'ZoneFPV',23);at(self.sidebarTitle.widget,.02,.024,.22,.06)
+        divider:SetBrushColor(self.theme.colors.rule)
+        self.surfaceFrame={decoration(canvas,0,0,1,.0015,self.theme.colors.rule),
+            decoration(canvas,0,0,.0015,.915,self.theme.colors.rule),decoration(canvas,.9985,0,.0015,.915,self.theme.colors.rule)}
+        self.sidebarTitle=label(canvas,'ZoneFPV',23,self.theme.colors.heading);at(self.sidebarTitle.widget,.02,.024,.22,.06)
         local pageCount=#model.pages(opts.snapshot()or {})
         local pageStep=.80/math.max(5,pageCount)
         for i=1,pageCount do
@@ -745,18 +864,20 @@ function M.new(opts)
             call(read(b.text.widget,'Slot'),'SetPadding',{Left=14,Top=0,Right=0,Bottom=0})
             local left=make('Border',canvas);at(left,0,y,.003,pageStep-.01)
             local right=make('Border',canvas);at(right,.247,y,.003,pageStep-.01)
-            left:SetBrushColor(amber);right:SetBrushColor(amber)
-            b.background,b.left,b.right=background,left,right;self.sidebar[i]=b
+            left:SetBrushColor(self.theme.colors.amber);right:SetBrushColor(self.theme.colors.amber)
+            b.background,b.left,b.right,b.sidebarItem=background,left,right,true;self.sidebar[i]=b
         end
-        self.title=label(canvas,'ZoneFPV',24);at(self.title.widget,.272,.035,.70,.065)
+        self.title=label(canvas,'ZoneFPV',24,self.theme.colors.heading);at(self.title.widget,.272,.035,.70,.065)
         local headingLine=make('Border',canvas);at(headingLine,.272,.106,.70,.0015)
-        headingLine:SetBrushColor(color(.10,.096,.078))
+        headingLine:SetBrushColor(self.theme.colors.rule)
         for i=1,3 do
+            local background=decoration(canvas,.272+(i-1)*.235,.115,.226,.049,self.theme.colors.tab)
             local b=button(canvas,'',function()cancelPreviewDrag();self:commitSliders();self.section=i;self.sectionSelections[self.page]=i;self.row=1;refresh()end)
             at(b.widget,.272+(i-1)*.235,.115,.226,.049)
+            b.background=background;b.underline=decoration(canvas,.272+(i-1)*.235,.162,.226,.002,self.theme.colors.rule)
             b.sectionId=i;self.sectionTabs[i]=b
         end
-        self.description=label(canvas,'',15,nil,'body');at(self.description.widget,.272,.176,.70,.065)
+        self.description=label(canvas,'',13,self.theme.colors.muted,'body');at(self.description.widget,.272,.176,.70,.065)
         self.description.widget:SetAutoWrapText(true)
         self.scroll=make('ScrollBox',canvas);at(self.scroll,.272,.25,.70,.565)
         self.scroll:SetOrientation(1) -- Orient_Vertical.
@@ -768,14 +889,16 @@ function M.new(opts)
             local border=make('Border',rowSize)
             border:SetPadding({Left=8,Top=4,Right=8,Bottom=4})
             local rowCanvas=make('CanvasPanel',border)
+            local rule=decoration(rowCanvas,0,.98,1,.02,self.theme.colors.rule)
+            local edge=decoration(rowCanvas,0,0,.0025,1,self.theme.colors.amber)
             local caption=label(rowCanvas,'',16);at(caption.widget,0,.1,.48,.8)
             caption.widget:SetAutoWrapText(true)
-            local value=label(rowCanvas,'',16,amber);at(value.widget,.57,.1,.36,.8)
+            local value=label(rowCanvas,'',16,self.theme.colors.amber);at(value.widget,.57,.1,.36,.8)
             value.widget:SetAutoWrapText(true)
             local minus=button(rowCanvas,'<',function()executeRow(self.osdRowWidgets[i].index,-1)end);at(minus.widget,.495,0,.055,1)
             local plus=button(rowCanvas,'>',function()executeRow(self.osdRowWidgets[i].index,1)end);at(plus.widget,.945,0,.055,1)
-            local activate=button(rowCanvas,'',function()executeRow(self.osdRowWidgets[i].index,1)end);at(activate.widget,.50,0,.49,1)
-            local mode=button(rowCanvas,'',function()executeMode(self.osdRowWidgets[i].index)end);at(mode.widget,.72,0,.275,1)
+            local activate=button(rowCanvas,'',function()executeRow(self.osdRowWidgets[i].index,1)end,self.theme.colors.amber);at(activate.widget,.50,0,.49,1)
+            local mode=button(rowCanvas,'',function()executeMode(self.osdRowWidgets[i].index)end,self.theme.colors.amber);at(mode.widget,.72,0,.275,1)
             local clear=button(rowCanvas,'',function()executeClear(self.osdRowWidgets[i].index)end)
             local number=make('EditableTextBox',rowCanvas);call(number,'SetSelectAllTextWhenFocused',true)
             local slider=make('Slider',rowCanvas);at(slider,.495,.12,.335,.76)
@@ -784,7 +907,7 @@ function M.new(opts)
             slider:SetSliderBarColor(self.theme.colors.muted)
             slider:SetSliderHandleColor(self.theme.colors.amber)
             if type(read(slider,'IsFocusable'))=='boolean'then slider.IsFocusable=false end
-            local entry={root=rowSize,background=border,caption=caption,value=value,minus=minus,plus=plus,activate=activate,mode=mode,clear=clear,number=number,slider=slider}
+            local entry={root=rowSize,background=border,rule=rule,edge=edge,caption=caption,value=value,minus=minus,plus=plus,activate=activate,mode=mode,clear=clear,number=number,slider=slider}
             self.osdRowWidgets[i]=entry;self.rowWidgets[i]=entry
         end
         self.osdItemTitle=label(canvas,'',15,nil,'body');at(self.osdItemTitle.widget,.272,.25,.19,.037)
@@ -792,7 +915,7 @@ function M.new(opts)
         self.osdItemScroll:SetOrientation(1);self.osdItemScroll:SetConsumeMouseWheel(1)
         self.osdItemList=make('VerticalBox',self.osdItemScroll)
         self.osdItemButtons={}
-        for id=0,13 do
+        for id=0,osdLayout.itemCount-1 do
             local rowSize=make('SizeBox',self.osdItemList);rowSize:SetHeightOverride(32)
             local border=make('Border',rowSize);border:SetPadding({Left=6,Top=3,Right=6,Bottom=3})
             local b=button(border,'',function()selectOSDItem(id)end)
@@ -801,7 +924,7 @@ function M.new(opts)
             b.osdItemID,b.background,b.root=id,border,rowSize;self.osdItemButtons[id+1]=b
         end
         self.preview=make('Border',canvas);at(self.preview,.475,.25,.255,.565)
-        self.preview:SetBrushColor(color(.012,.013,.012));self.preview:SetPadding({Left=4,Top=4,Right=4,Bottom=4})
+        self.preview:SetBrushColor(self.theme.colors.preview);self.preview:SetPadding({Left=4,Top=4,Right=4,Bottom=4})
         local previewCanvas=make('CanvasPanel',self.preview)
         self.previewTitle=label(previewCanvas,'',13);at(self.previewTitle.widget,.01,.01,.96,.05)
         local previewBody=make('CanvasPanel',previewCanvas);at(previewBody,.01,.10,.98,.77);self.previewBody=previewBody
@@ -813,19 +936,19 @@ function M.new(opts)
             call(self.previewTexts[i].widget,'SetClipping',1) -- ClipToBounds also protects the unmeasured initial fallback.
             self.previewLines[i]=make('Border',previewBody)
         end
-        self.previewOutline={};for i=1,4 do local edge=make('Border',previewBody);edge:SetBrushColor(amber);self.previewOutline[i]=edge end
+        self.previewOutline={};for i=1,4 do local edge=make('Border',previewBody);edge:SetBrushColor(self.theme.colors.amber);self.previewOutline[i]=edge end
         self.previewInput=make('Button',previewBody);self.theme:button(self.previewInput,false,false);at(self.previewInput,0,0,1,1,100)
         if type(read(self.previewInput,'IsFocusable'))=='boolean'then self.previewInput.IsFocusable=false end
-        self.rowHelp=label(canvas,'',14,nil,'body');at(self.rowHelp.widget,.272,.836,.70,.045)
+        self.rowHelp=label(canvas,'',13,self.theme.colors.muted,'body');at(self.rowHelp.widget,.272,.836,.70,.045)
         self.rowHelp.widget:SetAutoWrapText(true)
-        self.resources=label(canvas,'',12,nil,'body');at(self.resources.widget,.272,.86,.70,.026)
-        self.feedback=label(canvas,'',14,amber,'body');at(self.feedback.widget,.272,.885,.70,.027)
+        self.resources=label(canvas,'',12,self.theme.colors.muted,'body');at(self.resources.widget,.272,.86,.70,.026)
+        self.feedback=label(canvas,'',14,self.theme.colors.amber,'body');at(self.feedback.widget,.272,.885,.70,.027)
         local footer=make('Border',canvas);at(footer,0,.917,1,.083)
-        footer:SetBrushColor(color(.043,.043,.037))
+        footer:SetBrushColor(self.theme.colors.footer)
         local footerLine=make('Border',canvas);at(footerLine,0,.915,1,.002)
-        footerLine:SetBrushColor(color(.13,.12,.10))
+        footerLine:SetBrushColor(self.theme.colors.rule)
         self.exitHint=label(canvas,'Esc',17);at(self.exitHint.widget,.02,.938,.20,.044)
-        self.telemetry=label(canvas,'',14,nil,'body');at(self.telemetry.widget,.272,.94,.70,.04)
+        self.telemetry=label(canvas,'',12,self.theme.colors.muted,'body');at(self.telemetry.widget,.272,.94,.70,.04)
         self.body:SetVisibility(1);self.active=false
         refresh();log('ZoneFPV tab attached to NavigationPanel.SlotContainer; native PageViewBase attached to PDAView.Switcher at index '..tabIndex)
     end
@@ -848,7 +971,7 @@ function M.new(opts)
     local function discovery(now,pc)
         if not same(pc,self.pc)then
             detach();self.pc=pc;self.candidates={};self.rejected={};self.seeded=false;self.nextProbe=0;self.managers={};self.managerViews={}
-            self.nextDiscovery=0;self.diagnostics={}
+            self.nextDiscovery=0;self.diagnostics={};self.classDiagnostics=0
         end
         -- Discovery/closed-PDA work is limited to 10 Hz; active UI input is
         -- still polled every EngineTick. Never scan the global array per frame.
@@ -888,7 +1011,7 @@ function M.new(opts)
         end
         for _=1,math.min(4,#self.pending)do
             local entry=table.remove(self.pending,1);local v=entry.object
-            if valid(v)then
+            if isPDAView(v)then
                 -- Construction notification can precede local-player setup by
                 -- seconds during a load. Keep the bounded candidate, not a
                 -- thirty-frame retry which permanently misses that PDA.
@@ -896,7 +1019,7 @@ function M.new(opts)
             end
         end
         for id,v in pairs(self.candidates)do
-            if not valid(v)then self.candidates[id]=nil;self.rejected[id]=nil
+            if not isPDAView(v)then self.candidates[id]=nil;self.rejected[id]=nil
             elseif ownedByPlayer(v,pc)then
                 local opened=viewOpen(v)
                 self.nativeOpen=self.nativeOpen or opened
@@ -905,7 +1028,7 @@ function M.new(opts)
                 if type(self.rejected[id])=='number'and now>=self.rejected[id]then self.rejected[id]=nil end
                 if self.rejected[id]then if opened then return v end
                 elseif valid(read(v,'Container'))then
-                    if (opened or not valid(self.root))and (not same(self.view,v)or not valid(self.root))then
+                    if opened and (not same(self.view,v)or not valid(self.root))then
                         detach();local ok,err=pcall(build,v)
                         if not ok then
                             detach();self.rejected[id]=self.classPending and now+5 or true
@@ -929,6 +1052,7 @@ function M.new(opts)
         end
     end
     function self:requestOpen(now,pc)
+        if self.view and not attachedIdentity()then abandon()end
         self.selectRequested=true;self.requestUntil=(now or 0)+3
         pc=pc or self.pc
         if not valid(pc)then return false end
@@ -1049,6 +1173,9 @@ function M.new(opts)
     end
     local function update(now,pc)
         self.currentNow=now
+        -- Revalidate even inside the discovery cache window: another native
+        -- menu can replace a view/binding between two adjacent EngineTicks.
+        if self.view and not attachedIdentity()then abandon()end
         if self.inject and now>=self.inject.releaseAt then releaseInput()end
         if not valid(pc)then self.nativeOpen=false;detach();return false end
         -- The usual 100ms discovery cache can outlive a closed PDA. Refresh
@@ -1117,12 +1244,19 @@ function M.new(opts)
             if b~=self.buttons[1]and enabled then
                 local hovered=call(b.widget,'IsHovered')==true
                 if b.hovered~=hovered then
-                    local selected=b.osdItemID~=nil and b.osdItemID==self.osdSelected or b.sectionId~=nil and b.sectionId==self.section
+                    local selected=b.osdItemID~=nil and b.osdItemID==self.osdSelected or b.sectionId~=nil and b.sectionId==self.section or b==self.sidebar[self.page]
                     self.theme:button(b.widget,selected,hovered);b.hovered=hovered
-                    if b.background then
-                        local active=b.osdItemID~=nil and b.osdItemID==self.osdSelected or b==self.sidebar[self.page]
-                        b.background:SetBrushColor(active and self.theme.colors.rowActive or hovered and self.theme.colors.hover or self.theme.colors.transparent)
+                    if b.text then
+                        local tint=b.tint or selected and self.theme.colors.amber or self.theme.colors.text
+                        if b.sectionId~=nil then tint=selected and self.theme.colors.tabText or hovered and self.theme.colors.text or self.theme.colors.muted
+                        elseif b.sidebarItem and not selected and not hovered then tint=self.theme.colors.navText end
+                        b.text.widget:SetColorAndOpacity({SpecifiedColor=tint,ColorUseRule=0})
                     end
+                    if b.background then
+                        if b.sectionId~=nil then self.theme:tabBacking(b.background,selected,hovered)
+                        else b.background:SetBrushColor(selected and self.theme.colors.rowActive or hovered and self.theme.colors.hover or self.theme.colors.transparent)end
+                    end
+                    if b.underline then b.underline:SetBrushColor(selected and self.theme.colors.transparent or self.theme.colors.rule)end
                 end
             end
         end
@@ -1227,6 +1361,7 @@ function M.new(opts)
         releaseInput();detach();return self.nativeOpen==true
     end
     function self:destroy()
+        if self.view and not attachedIdentity()then abandon()end
         releaseInput();detach();self.pending={};self.candidates={}
         if observerTarget==self then observerTarget=nil end
     end

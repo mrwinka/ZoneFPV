@@ -40,6 +40,8 @@ struct State {
     std::uint64_t token=0,incoming=0,hits=0,buttstockHits=0;
     double total=0;
     unsigned source=0;
+    unsigned attackerCount=0;
+    std::array<std::uint32_t,128> attackerGuids{};
     ULONGLONG refreshed=0;
 } state;
 std::atomic<std::uintptr_t> receiveCore{0};
@@ -163,6 +165,15 @@ bool attackSource(unsigned source) {
         source==37 || (source>=40 && source<=43) || source==46;
 }
 
+void rememberIncomingAttacker(State& target,std::uint32_t guid) {
+    // The native damage constructor (0x10e3c55) stores the attacker's ActorCore
+    // UID at payload+20; ReceiveDamage resolves that UID at 0x650d0e/0x650f2b.
+    // Keep values only: no UObject lookup, native call or allocation in a hit.
+    if (guid>0x07ffffffu || guid==target.guid) return;
+    for (unsigned i=0;i<target.attackerCount;++i) if (target.attackerGuids[i]==guid) return;
+    if (target.attackerCount<target.attackerGuids.size()) target.attackerGuids[target.attackerCount++]=guid;
+}
+
 void __fastcall receiveHook(void* core,const void* payload,std::uint32_t flags) {
     if (receiveCore.load(std::memory_order_acquire)!=reinterpret_cast<std::uintptr_t>(core)) {
         originalReceive(core,payload,flags);return;
@@ -180,6 +191,9 @@ void __fastcall receiveHook(void* core,const void* payload,std::uint32_t flags) 
         const auto source=static_cast<const unsigned char*>(payload)[0x79];
         ++state.incoming; state.source=source;
         if (std::isfinite(amount) && amount>0 && attackSource(source)) {
+            std::uint32_t attacker=0xffffffffu;
+            std::memcpy(&attacker,static_cast<const unsigned char*>(payload)+0x20,sizeof(attacker));
+            rememberIncomingAttacker(state,attacker);
             if (source==12) ++state.buttstockHits;
             ++state.hits; state.total+=static_cast<double>(amount);
         }
@@ -415,6 +429,7 @@ extern "C" __declspec(dllexport) int zonefpv_combat_arm(void*) {
         state.pawn=static_cast<std::uintptr_t>(pawn); state.core=core; state.token=token;
         state.guid=guid;state.identity=identity;
         state.incoming=0; state.hits=0; state.buttstockHits=0; state.total=0; state.source=0; state.error=0;
+        state.attackerCount=0;state.attackerGuids.fill(0);
         state.refreshed=GetTickCount64();
         receiveCore.store(core,std::memory_order_release);
     } else if (state.ready) state.error=7;

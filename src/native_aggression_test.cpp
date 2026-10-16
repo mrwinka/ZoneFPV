@@ -10,6 +10,8 @@ struct Fixture {
     std::uintptr_t pawnAddress=0,ai=0x900000,focus=0;
     unsigned reads=0,resets=0;
     bool failRead=false,failReset=false,retainFocus=false;
+    bool incomingAttack=false,loseAttackEvidence=false,useNativeEvidence=false;
+    unsigned attackReads=0;
     int changeSecond=0,changeAfter=0;
     Fixture() {
         pawnAddress=reinterpret_cast<std::uintptr_t>(pawn.data());
@@ -55,9 +57,21 @@ struct Fixture {
             if(!retainFocus)focus=0;
             return true;
         };
-        aggressionProcessGuarded(player,pawnAddress,r,clear,snapshot,reset);
+        auto acquired=[this](const CoreInfo& expectedPlayer,std::uintptr_t pawn,const CoreInfo& expectedActor) {
+            assert(aggressionSame(expectedPlayer,player) && pawn==pawnAddress && expectedActor.guid==actor.guid);
+            ++attackReads;
+            if (useNativeEvidence) return aggressionIncomingAttack(expectedPlayer,pawn,expectedActor);
+            return incomingAttack && !(loseAttackEvidence && attackReads>1);
+        };
+        aggressionProcessGuarded(player,pawnAddress,r,clear,snapshot,reset,acquired);
     }
 };
+void armEvidence(const Fixture& f) {
+    state=State{};state.ready=true;state.token=37;state.pawn=f.pawnAddress;state.core=f.player.core;
+    state.guid=f.player.guid;state.identity=f.player.identity;state.refreshed=GetTickCount64();
+    receiveCore.store(state.core,std::memory_order_release);
+    rememberIncomingAttacker(state,f.actor.guid);
+}
 }
 int main() {
     assert(!aggressionProfile() && "the fixture process must never call the installed game profile");
@@ -80,13 +94,56 @@ int main() {
         assert(f.reads==3 && f.resets==1 && r.attempted==1 && r.cleared==1 && r.reason==0);
     }
     {
-        Fixture f;auto r=f.row();f.focus=0x600000;r.acquired=1;f.process(r);
-        assert(f.reads==1 && f.resets==0 && r.reason==2 && !r.attempted);
+        Fixture f;auto r=f.row();f.focus=0x600000;r.acquired=1;f.incomingAttack=true;f.process(r);
+        assert(f.reads==1 && f.resets==0 && r.reason==2 && !r.attempted && f.attackReads==0);
+    }
+    {
+        // Between native aim bursts GetFocusedEnemy is null, even though this
+        // exact baseline NPC sent a real hit to the leased drone proxy.
+        Fixture f;auto r=f.row();f.focus=0;f.incomingAttack=true;f.process(r);
+        assert(f.reads==3 && f.attackReads==2 && f.resets==1 && r.cleared && r.attempted && r.reason==0);
+    }
+    {
+        Fixture f;auto r=f.row();f.focus=0;f.incomingAttack=true;f.loseAttackEvidence=true;f.process(r);
+        assert(f.reads==2 && f.attackReads==2 && f.resets==0 && !r.attempted && r.reason==4);
+    }
+    {
+        Fixture f;armEvidence(f);f.useNativeEvidence=true;f.focus=0;
+        assert(aggressionIncomingAttack(f.player,f.pawnAddress,f.actor));
+        auto r=f.row();f.process(r);
+        assert(f.resets==1 && r.attempted && r.cleared && f.attackReads==2 &&
+            "the real active-proxy ledger must reset its verified attacker even when aim was never sampled");
+    }
+    for(unsigned change=0;change<14;++change) {
+        Fixture f;armEvidence(f);f.useNativeEvidence=true;f.focus=0;
+        switch(change) {
+        case 0: state.ready=false;break;
+        case 1: state.token=0;break;
+        case 2: state.pawn+=8;break;
+        case 3: state.core+=8;break;
+        case 4: ++state.guid;break;
+        case 5: ++state.identity.internalIndex;break;
+        case 6: ++state.identity.name;break;
+        case 7: state.identity.klass+=8;break;
+        case 8: state.identity.vtable+=8;break;
+        case 9: receiveCore.store(0);break;
+        case 10: state.refreshed=GetTickCount64()-leaseMilliseconds-1;break;
+        case 11: state.refreshed=GetTickCount64()+10000;break;
+        case 12: state.attackerCount=0;break; // a new arm has no preceding flight evidence
+        case 13: ++state.attackerGuids[0];break;
+        }
+        assert(!aggressionIncomingAttack(f.player,f.pawnAddress,f.actor));
+        auto r=f.row();f.process(r);assert(f.reads==1 && f.resets==0 && !r.attempted && r.reason==1);
     }
     for(unsigned mismatch=0;mismatch<4;++mismatch) {
         Fixture f;auto r=f.row();
         switch(mismatch) {case 0:f.focus=0x600000;break;case 1:++r.expectedGuid;break;case 2:r.expectedCore+=8;break;case 3:++r.expectedIndex;break;}
         f.process(r);assert(f.reads==1 && f.resets==0 && !r.cleared);
+    }
+    for(unsigned mismatch=1;mismatch<4;++mismatch) {
+        Fixture f;auto r=f.row();f.focus=0;f.incomingAttack=true;
+        switch(mismatch) {case 1:++r.expectedGuid;break;case 2:r.expectedCore+=8;break;case 3:++r.expectedIndex;break;}
+        f.process(r);assert(f.reads==1 && f.resets==0 && !r.cleared && r.reason==3);
     }
     for(int change=1;change<=8;++change) {
         Fixture f;auto r=f.row();f.changeSecond=change;f.process(r);
@@ -122,5 +179,5 @@ int main() {
     DWORD old=0;assert(VirtualProtect(allocation,0x2000,PAGE_NOACCESS,&old));
     assert(!aggressionPointer(address,8) && !aggressionReadPointer(address,value));
     assert(VirtualFree(allocation,0,MEM_RELEASE));assert(!aggressionPointer(address,8));
-    std::cout << "PASS native aggression v12: matching current pawn focus OR proven acquisition with lost focus resets native AI state; unobserved null focus and third targets preserved, identity/races and readback checked\n";
+    std::cout << "PASS native aggression v12: current pawn focus, sampled acquisition or actual leased-proxy attacker evidence resets matching AI; null aim without evidence/third targets preserved, all player/actor generations, lease revocation/races and readback checked\n";
 }

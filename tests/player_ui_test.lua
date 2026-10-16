@@ -38,11 +38,12 @@ function game:AreSubtitlesEnabled()return self.subtitles end
 function game:SetSubtitlesEnabled(v)self.subtitles=v end
 local s={pc={bShowMouseCursor=true},world=world}
 ui.update(s,0,game,false)
-assert(not s.pc.bShowMouseCursor and not game.subtitles and widget.opacity==0)
+assert(s.pc.bShowMouseCursor and not game.subtitles and widget.opacity==0,
+    'HUD suppression must leave the native cursor/input mode untouched')
 assert(hud.opacity==0 and hud.visibility==1,'native gameplay HUD root must be suppressed during FPV')
 s.pc.bShowMouseCursor=true;ui.update(s,.1,game,true)
 assert(s.pc.bShowMouseCursor,'native menu must not have its cursor suppressed')
-ui.update(s,.2,game,false);assert(not s.pc.bShowMouseCursor)
+ui.update(s,.2,game,false);assert(s.pc.bShowMouseCursor)
 ui.restore(s,game)
 assert(s.pc.bShowMouseCursor and game.subtitles and widget.opacity==.6 and widget.visibility==0)
 assert(hud.opacity==.45 and hud.visibility==4,'native HUD must restore its original opacity and nondefault visibility')
@@ -73,7 +74,7 @@ ui.restore(s,game)
 assert(widget.visibility==0 and s.pc.bShowMouseCursor and game.subtitles and not s.playerUI)
 assert(hud.opacity==.45 and hud.visibility==4,'a subtitle restore error must not prevent native HUD restoration')
 widget.SetRenderOpacity=opacitySetter
-print('PASS widget visibility, cursor and subtitles restore independently of opacity failure')
+print('PASS widget visibility and subtitles restore independently of opacity failure; native cursor remains untouched')
 
 -- Root suppression must never turn an initially hidden HUD on after flight.
 local hiddenHud=makeHud(21,0,2)
@@ -199,3 +200,75 @@ ui.restore(s,game)
 assert(initializing.opacity==.65 and initializing.visibility==4,'delayed construction must preserve the original HUD snapshot')
 NotifyOnNewObject=nil
 print('PASS streamed HUD notifications, exact restoration and one initial lookup per supported flight')
+
+-- Cursor visibility is not relative mouse capture. Native PDA/focus transitions
+-- can change both while the HUD is hidden. Replaying the flight-entry cursor
+-- value at exit strands the mouse at a screen edge even with no camera clamp.
+local function captureController(initial)
+    local cursor,reads,writes=initial,0,0
+    local pc={relative=not initial,yaw=0,mouseX=0,
+        PlayerCameraManager={ViewYawMin=17,ViewYawMax=311,ViewPitchMin=-73,ViewPitchMax=82}}
+    setmetatable(pc,{
+        __index=function(_,key)
+            if key=='bShowMouseCursor'then reads=reads+1;return cursor end
+        end,
+        __newindex=function(self,key,value)
+            if key=='bShowMouseCursor'then
+                writes=writes+1;cursor=value
+                if value then self.relative=false end
+            else rawset(self,key,value)end
+        end,
+    })
+    function pc:nativeUI(open)
+        cursor=open;self.relative=not open;self.mouseX=0
+    end
+    function pc:mouse(delta)
+        if self.relative then self.yaw=self.yaw+delta
+        else
+            local x=math.max(-100,math.min(100,self.mouseX+delta))
+            self.yaw=self.yaw+x-self.mouseX;self.mouseX=x
+        end
+    end
+    function pc:counts()return reads,writes end
+    return pc
+end
+local native=captureController(true)
+local flight={world=world,pc=native}
+ui.update(flight,200,game,false)
+native:nativeUI(false) -- native closes its UI after FPV entry; capture is back
+ui.update(flight,200.1,game,false)
+ui.restore(flight,game)
+for _=1,12 do native:mouse(100)end
+assert(native.yaw==1200 and native.relative,
+    'a stale true cursor snapshot must not release native relative capture on FPV exit')
+local reads,writes=native:counts()
+assert(reads==0 and writes==0,'FPV HUD code must not snapshot, suppress or restore the native cursor')
+local limits=native.PlayerCameraManager
+assert(limits.ViewYawMin==17 and limits.ViewYawMax==311 and limits.ViewPitchMin==-73 and limits.ViewPitchMax==82,
+    'native camera/aiming constraints are unrelated to viewport capture and must remain unchanged')
+
+native=captureController(false);flight={world=world,pc=native}
+ui.update(flight,201,game,false)
+native:nativeUI(true) -- PDA opens while FPV is held
+ui.update(flight,201.1,game,true)
+ui.update(flight,201.2,game,false) -- one bridge callback may lag the native PDA
+assert(native.bShowMouseCursor and not native.relative,'a delayed menu sample must not hide the native PDA cursor')
+ui.restore(flight,game)
+assert(native.bShowMouseCursor,'FPV exit must not replay false over an open native menu')
+native:nativeUI(false)
+for _=1,12 do native:mouse(100)end
+assert(native.yaw==1200 and native.relative,'PDA close after FPV exit must retain unbounded relative mouse input')
+reads,writes=native:counts();assert(writes==0)
+
+native=captureController(false);flight={world=world,pc=native}
+ui.update(flight,202,game,false)
+native:nativeUI(true) -- focus loss may temporarily expose an OS/native cursor
+ui.update(flight,202.1,game,false)
+native:nativeUI(false) -- native focus return reacquires viewport capture
+ui.update(flight,202.2,game,false)
+ui.restore(flight,game)
+for _=1,12 do native:mouse(100)end
+reads,writes=native:counts()
+assert(native.yaw==1200 and reads==0 and writes==0,
+    'AltTab capture recovery must remain owned by the native viewport across flight restoration')
+print('PASS FPV/PDA/focus cursor ownership: no stale snapshot writes, delayed menu state safe, relative look turns 1200 degrees and native aiming limits preserved')

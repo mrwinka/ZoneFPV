@@ -1,8 +1,33 @@
-## 0.3.0 RC1 — 2026-10-08
+# Changelog
+
+## 0.3.0 RC2 — 2026-10-16
+
+### Added since RC1
+
+- **LiPo battery simulation:** enable it in **Flight → Main** in the PDA or F6 menu; select **300–20000 mAh** and **2–8S**. Default: 1500 mAh, 6S.
+- Consumption follows thrust and manoeuvres. Pack mass, a nonlinear discharge curve, internal resistance, voltage sag/recovery and heating/cooling affect available thrust. This approximates a five-inch quad rather than a specific motor/propeller/battery combination.
+- **Movable battery OSD indicator:** remaining charge, voltage, current, used mAh and LOW/LAND warnings. Existing OSD positions are retained.
+- A new flight receives a full battery; returning to launch preserves charge. Menus and focus pauses do not drain it. Depletion cuts motor thrust, followed by a short fall and return to the player. Battery simulation can be disabled.
+
+### Corrected since RC1
+
+- **NPC discovery:** recover existing NPCs reactivated from the game's pool without a new creation notification; retain bounded retries for loading models without duplicate pending entries.
+- **Scanner tracking:** render brackets in the game UI using the current game frame, removing the independent desktop-overlay delay during camera turns. Small skeletal-pose jitter is filtered without smoothing camera or actor movement.
+- **Scanner appearance:** compact DPI-aware brackets and corrected colours; restore native faction icons with distance labels in the game-rendered scanner.
+- **Thermal coverage:** handle modular NPC components, including separate head parts, with identity/ownership checks when applying and restoring materials. The scanner does not change NPC visibility or AI.
+- **PDA compatibility:** restore the ZoneFPV tab for the runtime's supported class-path formats; keep it out of technician upgrade screens and reject replaced/stale native panels.
+- **Field-instrument styling:** native PDA backing, subdued amber selection, cream labels and native fonts; keep the existing menu organisation and functions.
+- **Player mouse capture:** stop restoring stale cursor state after FPV, PDA use and Alt+Tab, which could restrict mouse turning to the screen edges.
+- **Kamikaze feedback:** prevent the drone's own blast from starting player concussion/dirt sources; retain protection when immediately reentering FPV. NPC damage, impulse, sound and blast visuals remain; ordinary game grenades are unchanged.
+- **Aggression reset:** account for confirmed attacks on the drone even when an NPC has no current focused enemy between bursts. Hostility/targets present before flight are preserved.
+- **Performance work:** avoid recurring global controller searches, reuse resource-check file handles, remove blocking retries for unavailable effects and reuse collision clearance within the same frame. Precise obstacle checks remain. These changes do not establish a universal FPS gain or eliminate every crash.
+
+
+## RC1 development build — 2026-10-08
 
 - Retain bounded deferred discovery for still-live NPCs whose meshes load after the initial retry window; preserve native-read and discovery budgets.
 - Require unchanged identity and ownership throughout a captured equipment attachment chain before any visibility or restoration write.
-- Add regression coverage for late mesh readiness and transferred intermediate equipment. No live gameplay correction is claimed; see RELEASE_STATUS.md.
+- Add regression coverage for late mesh readiness and transferred intermediate equipment. Live gameplay recovery was not confirmed for that development build.
 
 ## RC1 debug v57 — 2026-10-08
 
@@ -214,4 +239,8 @@ The CNPP black effect remains unresolved; quest checkpoint fog is unchanged. Unl
 - Validate streamed/pooled target lifecycle, world, identity and fresh transforms before publishing. Reject camera-plane crossing boxes rather than bounding partial front corners.
 - Alternate complete generation/sequence packets, reject stale rollback and expire unchanged frames after 100 ms. Refresh visible brackets at 8 ms in the existing helper loop.
 - Rebuild helper53; retain native51, PDA52, armament PAK and current preferences. See DEBUG_V53_REPORT_RU.md for verification and manual flight checks.
+
+
+
+
 

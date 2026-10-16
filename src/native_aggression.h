@@ -38,8 +38,14 @@ bool aggressionProfile() {
     constexpr unsigned char focus[]={0x56,0x57,0x48,0x83,0xec,0x48,0x48,0x8b,0x05,0x61,0xd0,0x32,0x03,0x48,0x31,0xe0,0x48,0x89,0x44,0x24,0x40,0x48,0x8b,0x81,0x50,0x06,0x00,0x00,0x48,0x8b,0x88,0x60,0x06,0x00,0x00};
     constexpr unsigned char reset[]={0x56,0x48,0x83,0xec,0x20,0x48,0x89,0xce,0x48,0x8b,0x49,0x10,0xb2,0x01,0xe8,0x17,0x06,0xdc,0xfd,0xc6,0x46,0x4c,0x00,0x48,0x8b,0x4e,0x38,0x48,0x8b,0x01,0xff,0x50,0x68};
     constexpr unsigned char resolver[]={0x48,0x69,0xc9,0x00,0x07,0x00,0x00,0x48,0x8b,0x8c,0x08,0x70,0x06,0x00,0x00};
+    constexpr unsigned char attackerRead[]={0x8b,0x5f,0x20};
+    constexpr unsigned char attackerWrite[]={0x44,0x89,0x4e,0x20};
+    constexpr unsigned char attackerCoreGuid[]={0x44,0x8b,0x48,0x10};
     return bytesMatch(image,0x6b6ea52,focus,sizeof(focus)) && bytesMatch(image,0x32cb53c,reset,sizeof(reset)) &&
-        bytesMatch(image,0x6bb3cc2,resolver,sizeof(resolver));
+        bytesMatch(image,0x6bb3cc2,resolver,sizeof(resolver)) &&
+        bytesMatch(image,0x650d0e,attackerRead,sizeof(attackerRead)) &&
+        bytesMatch(image,0x10e3c55,attackerWrite,sizeof(attackerWrite)) &&
+        bytesMatch(image,0x3256422,attackerCoreGuid,sizeof(attackerCoreGuid));
 }
 bool aggressionCallFocus(std::uintptr_t actor,std::uintptr_t& focus) {
     const auto fn=reinterpret_cast<AggressionFocus>(reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr))+0x6b6ea52);
@@ -67,8 +73,23 @@ bool aggressionSnapshot(std::uintptr_t actor,CoreInfo& before,std::uintptr_t& ai
     return coreInfo(actor,after) && aggressionSame(before,after) &&
         aggressionReadPointer(after.core+0x660,stillAI) && stillAI==ai;
 }
-template<class Snapshot,class Reset>
-void aggressionProcessGuarded(const CoreInfo& player,std::uintptr_t pawn,AggressionRow& row,bool clear,Snapshot snapshot,Reset reset) {
+bool aggressionIncomingAttack(const CoreInfo& player,std::uintptr_t pawn,const CoreInfo& actor) {
+    // GetFocusedEnemy can be null between bursts/after parking while the NPC's
+    // combat/search memory still pursues this pawn. A real received attack is
+    // independent evidence, scoped to this exact still-armed proxy generation.
+    bool acquired=false;
+    AcquireSRWLockShared(&stateLock);
+    const auto now=GetTickCount64();
+    if (state.ready && state.token && state.pawn==pawn && state.core==player.core && state.guid==player.guid &&
+        sameIdentity(state.identity,player.identity) && receiveCore.load(std::memory_order_acquire)==state.core &&
+        now>=state.refreshed && now-state.refreshed<=leaseMilliseconds) {
+        for (unsigned i=0;i<state.attackerCount;++i) if (state.attackerGuids[i]==actor.guid) {acquired=true;break;}
+    }
+    ReleaseSRWLockShared(&stateLock);
+    return acquired;
+}
+template<class Snapshot,class Reset,class IncomingAttack>
+void aggressionProcessGuarded(const CoreInfo& player,std::uintptr_t pawn,AggressionRow& row,bool clear,Snapshot snapshot,Reset reset,IncomingAttack incomingAttack) {
     CoreInfo before;std::uintptr_t ai=0,focus=0;
     if (row.actor==pawn || !snapshot(row.actor,before,ai,focus)) {row.reason=3;return;}
     row.guid=before.guid;row.core=before.core;row.index=before.identity.internalIndex;row.focus=focus;
@@ -76,12 +97,13 @@ void aggressionProcessGuarded(const CoreInfo& player,std::uintptr_t pawn,Aggress
     // Parking the proxy can remove current aim before persistent AI/search
     // state is reset. A verified in-flight acquisition authorizes that zero-
     // focus case, but never an actor now pursuing a different target.
-    if (focus!=pawn && (focus!=0 || row.acquired!=1)) {row.reason=focus?2u:1u;return;}
+    const bool attackAcquired=focus==0 && row.acquired!=1 && incomingAttack(player,pawn,before);
+    if (focus!=pawn && (focus!=0 || (row.acquired!=1 && !attackAcquired))) {row.reason=focus?2u:1u;return;}
     if (row.guid!=row.expectedGuid || row.core!=row.expectedCore || row.index!=row.expectedIndex) {row.reason=3;return;}
     CoreInfo currentPlayer,current;std::uintptr_t currentAI=0,currentFocus=0;
     if (!coreInfo(pawn,currentPlayer) || !aggressionSame(player,currentPlayer) ||
         !snapshot(row.actor,current,currentAI,currentFocus) || !aggressionSame(before,current) ||
-        currentAI!=ai || currentFocus!=focus) {row.reason=4;return;}
+        currentAI!=ai || currentFocus!=focus || (attackAcquired && !incomingAttack(currentPlayer,pawn,current))) {row.reason=4;return;}
     // Lua authorizes only baseline-with-no-target actors. Relationships and
     // faction tables are never read-modified-written by this cleanup.
     row.attempted=1;
@@ -92,7 +114,7 @@ void aggressionProcessGuarded(const CoreInfo& player,std::uintptr_t pawn,Aggress
     } else row.reason=4;
 }
 void aggressionProcess(const CoreInfo& player,std::uintptr_t pawn,AggressionRow& row,bool clear) {
-    aggressionProcessGuarded(player,pawn,row,clear,aggressionSnapshot,aggressionCallReset);
+    aggressionProcessGuarded(player,pawn,row,clear,aggressionSnapshot,aggressionCallReset,aggressionIncomingAttack);
 }
 int aggressionRequest(bool clear) {
     InitOnceExecuteOnce(&initialized,initialize,nullptr,nullptr);

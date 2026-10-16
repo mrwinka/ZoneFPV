@@ -88,7 +88,7 @@ assert(fog['r.Fog']==0 and cameraComponent.PostProcessSettings.VignetteIntensity
 local originalArms,originalNew=nativeArms,nativeNew
 now=10;assert(guard.beginRecovery(session,now)and guard.recoveryActive())
 assert(session.visualGuard==nil and nativeActive and nativeArms==originalArms and nativeNew==originalNew,
-    'existing native lease transfers without disarm or re-arm gap')
+    'existing seven-key flight scope transfers to recovery without downgrading or rearming')
 assert(not modifier.disabled and modifier.Alpha==.4 and cameraManager.bEnableColorScaling)
 assert(cameraComponent.PostProcessSettings.VignetteIntensity==.5 and not cameraComponent.PostProcessSettings.bOverride_VignetteIntensity)
 assert(fog['r.Fog']==2 and fog['r.VolumetricFog']==1 and fog['r.LocalFogVolume']==3 and removed==registered)
@@ -284,7 +284,8 @@ assert(values[suppressionIndex]==0 and suppressionMID.scalars[suppressionIndex]=
 assert(values[concussionIndex]==0 and rows[1].Weight==0 and rows[2].Weight==0 and rows[3].Weight==0)
 assert(rows[5].Weight==.95 and rows[6].Weight==0 and foreignSuppression.scalars[suppressionIndex]==1.23)
 now=100.01;assert(guard.beginRecovery(flight,now))
-assert(not visualActive and nativeActive and nativeCameraScans==1 and globalMIDScans==1)
+assert(not visualActive and nativeActive and nativeCameraScans==1 and globalMIDScans==0,
+    'an available native owned camera stack replaces expensive global material discovery')
 assert(not normalModifier.disabled and normalModifier.Alpha==.45 and pcm.bEnableColorScaling)
 assert(blinkMID.scalars[indices.BlinkAlpha]==.41 and radiationMID.scalars[indices['Noise intensity']]==.59 and rows[6].Weight==.3)
 assert(foreignSuppression.scalars[suppressionIndex]==1.23 and otherComponent.PostProcessSettings.WeightedBlendables.Array[1].Weight==.8,
@@ -312,7 +313,7 @@ for frame=1,99 do
     assert(foreignLate.scalars[suppressionIndex]==.91 and rows[5].Weight==.95 and foreignAudio)
 end
 assert(nativeBlocked-beforeBlocked>=198 and classShakeStops>=200 and audioStops>25)
-assert(globalMIDScans==1 and nativeCameraScans==1 and allShakeStops==unchanged.allShakeStops and allFades==unchanged.allFades and registered==unchanged.registered)
+assert(globalMIDScans==0 and nativeCameraScans==1 and allShakeStops==unchanged.allShakeStops and allFades==unchanged.allFades and registered==unchanged.registered)
 -- The fallback also corrects direct raw writes bypassing a synthetic native setter.
 values[suppressionIndex]=.8;now=105.009;guard.updateRecovery(now,world,controller)
 assert(values[suppressionIndex]==0)
@@ -368,8 +369,8 @@ assert(values[concussionIndex]==0 and values[suppressionIndex]==0 and values[ind
 now=155;assert(not guard.updateRecovery(now,world,controller)and rows[2].Weight==.6)
 print('PASS v44 new FPV cancels recovery without stale-deadline interference; unsupported native versions retain both narrowly scoped MPC corrections')
 
--- v45 shipping generated-class paths are correct, but registry-only discovery
--- can miss assets until their first load. Exercise the actual shared loader.
+-- A missing optional shake/event must never synchronously load in a recovery
+-- tick. Such game-thread loads caused hundreds-of-ms streaming stalls.
 local exactPaths={
     '/Game/GameLite/Resources/CameraShake/CamShakeConcussion.CamShakeConcussion_C',
     '/Game/GameLite/Resources/CameraShake/CamShakeConcussion_2.CamShakeConcussion_2_C',
@@ -379,22 +380,23 @@ local hiddenAssets={}
 for _,path in ipairs(exactPaths)do hiddenAssets[path]=assert(assets[path]);assets[path]=nil end
 local assetLoads={}
 LoadAsset=function(path)
-    assert(hiddenAssets[path],'recovery may load only exact known concussion feedback assets')
-    assetLoads[path]=(assetLoads[path]or 0)+1
-    assets[path]=hiddenAssets[path];return assets[path],true,true
+    error('blocking asset loads are forbidden in visual recovery: '..path)
 end
 activeShakes[shake1]=true;activeShakes[shake2]=true;ownedAudio=true
 now=160;assert(guard.beginRecovery({world=world,pc=controller,pawn=localPawn},now))
-for _,path in ipairs(exactPaths)do assert(assetLoads[path]==1,'missing registry asset must use game-thread loader once')end
-assert(not activeShakes[shake1]and not activeShakes[shake2]and not ownedAudio and activeShakes[normalShake]and foreignAudio)
+for _,path in ipairs(exactPaths)do assert(not assetLoads[path])end
+assert(activeShakes[shake1]and activeShakes[shake2]and ownedAudio and activeShakes[normalShake]and foreignAudio)
+-- The game then loads/uses the assets itself; bounded registry retry discovers
+-- them without issuing a load, and retires only the same exact feedback.
+for _,path in ipairs(exactPaths)do assets[path]=hiddenAssets[path]end
 for frame=1,99 do
     now=160+frame*.05;activeShakes[shake1]=true;activeShakes[shake2]=true
     assert(guard.updateRecovery(now,world,controller))
-    assert(not activeShakes[shake1]and not activeShakes[shake2]and activeShakes[normalShake])
+    if frame>=20 then assert(not activeShakes[shake1]and not activeShakes[shake2]and activeShakes[normalShake])end
 end
-for _,path in ipairs(exactPaths)do assert(assetLoads[path]==1,'already valid classes/events must not reload per frame')end
+for _,path in ipairs(exactPaths)do assert(not assetLoads[path],'already valid classes/events must not load per frame')end
 now=165;assert(not guard.updateRecovery(now,world,controller))
-print('PASS v45 registry misses soft-load only the two shipping generated shake classes and exact local Wwise event; cached assets do not reload per frame')
+print('PASS recovery registry misses never block asset streaming; exact late game-loaded shake/audio assets are found on bounded retry and unrelated feedback is preserved')
 
 -- A Blueprint asset is not a TSubclassOf camera shake. Reject that loader result
 -- instead of invoking an unrelated/wrong object or widening to all camera shakes.
@@ -408,18 +410,18 @@ now=171;assert(guard.updateRecovery(now,world,controller)and not activeShakes[sh
 now=175;assert(not guard.updateRecovery(now,world,controller))
 print('PASS v45 generated-class identity rejects raw Blueprint assets and safely accepts later exact class availability')
 
--- Failed loads stay bounded inside the original five seconds, including audio.
+-- Permanently missing assets stay registry-only inside the original deadline.
 for _,path in ipairs(exactPaths)do assets[path]=nil;assetLoads[path]=0 end
 LoadAsset=function(path)
-    assert(hiddenAssets[path]);assetLoads[path]=assetLoads[path]+1;return nil,false,false
+    assetLoads[path]=assetLoads[path]+1;error('unexpected synchronous load')
 end
 now=180;assert(guard.beginRecovery({world=world,pc=controller,pawn=localPawn},now))
 for frame=1,99 do now=180+frame*.05;assert(guard.updateRecovery(now,world,controller))end
-for _,path in ipairs(exactPaths)do assert(assetLoads[path]==3,'failed exact feedback loads are bounded to three attempts per recovery')end
+for _,path in ipairs(exactPaths)do assert(assetLoads[path]==0,'a missing optional feedback variant must never load from disk')end
 now=185;assert(not guard.updateRecovery(now,world,controller))
-for _,path in ipairs(exactPaths)do assert(assetLoads[path]==3);assets[path]=hiddenAssets[path]end
+for _,path in ipairs(exactPaths)do assert(assetLoads[path]==0);assets[path]=hiddenAssets[path]end
 LoadAsset=nil
-print('PASS v45 missing shake/event assets have bounded three-attempt loading and cannot extend recovery or touch unrelated assets')
+print('PASS missing shake/event assets never cause blocking loads, cannot extend recovery or touch unrelated assets')
 
 -- v45 source regression: points remain alive behind a zero MPC shader input;
 -- after a shader-only five-second mask ends the mechanics immediately recreates

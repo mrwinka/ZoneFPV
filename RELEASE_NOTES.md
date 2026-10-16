@@ -1,71 +1,48 @@
-# ZoneFPV 0.3.0 RC1
+# ZoneFPV 0.3.0 RC2
 
-The current release candidate for ZoneFPV. Older releases remain available.
+RC2 adds optional battery simulation and includes the scanner, PDA, camera and combat fixes developed after the published RC1.
 
-## Added since 0.2.0
+## Added since RC1
 
-- **Settings inside the PDA.** The F6 settings menu is duplicated in PDA → ZoneFPV. Controller setup, calibration and button assignments open inside the PDA. Both menus use the same saved preferences.
-- **Kamikaze drone.** Detonate on impact above a configurable minimum impact speed. Adjust explosion power and set the threshold high enough to allow gentle landings.
-- **Grenade-drop drone.** Drop activated RGD-5 or F-1 grenades with an assigned button. Choose 1–20 grenades or unlimited ammunition; remaining charges are shown during flight.
-- **Combined combat mode.** Carry and drop grenades while retaining kamikaze impact detonation on the same drone. Combat settings are shown only when relevant to the selected drone type.
-- **Vision effects.** Select night/infrared-style modes such as Starlight IR, NIR, SWIR and IR LED, or thermal palettes such as White Hot, Black Hot, Rainbow and Ironbow. Toggle the chosen mode with an assigned button. Analog camera effects have their own switch.
-- **Lower camera.** Switch to a camera mounted under the drone to see directly below it. It rotates with the drone and can stay active only while an assigned button or CH is held.
-- **Drone flashlight.** Enable it in settings and switch it on or off with an assigned button.
-- **Artifact collection.** Pick up a nearby artifact from the drone with an assigned button. Collection distance is adjustable from 0.5 to 10 m. Holding the button retries collection as you approach an artifact.
-- **World scanner.** Display frames and distance markers for loaded NPCs, mutants and anomalies in the FPV view. Scanner visibility is configurable.
-- **Button assignments.** Capture the keyboard key, mouse button, controller button or CH you actually press. All assigned actions support Toggle or Hold; holding grenade release repeats drops at intervals.
-- **Controller setup.** Select a transmitter/gamepad, apply a profile and calibrate four flight axes. USB controllers can be connected while the game is running.
-- **Signal simulation.** Configure radio interference and signal loss caused by distance, obstacles and anomalies.
+- **LiPo battery simulation:** enable it in **Flight → Main** in the PDA or F6 menu; select **300–20000 mAh** and **2–8S**. Default: 1500 mAh, 6S.
+- Consumption follows thrust and manoeuvres. Pack mass, a nonlinear discharge curve, internal resistance, voltage sag/recovery and heating/cooling affect available thrust. This approximates a five-inch quad rather than a specific motor/propeller/battery combination.
+- **Movable battery OSD indicator:** remaining charge, voltage, current, used mAh and LOW/LAND warnings. Existing OSD positions are retained.
+- A new flight receives a full battery; returning to launch preserves charge. Menus and focus pauses do not drain it. Depletion cuts motor thrust, followed by a short fall and return to the player. Battery simulation can be disabled.
 
-## Corrections and verification
+## Corrected since RC1
 
-Settings use vertically scrolling lists and five groups: Flight, Image, Equipment, World and signal, and Settings. Input/focus restoration and cleanup of player camera effects were revised. The latest scanner changes continue waiting for NPCs that load late; visibility restoration now checks that equipment still belongs to the same actor.
+- **NPC discovery:** recover existing NPCs reactivated from the game's pool without a new creation notification; retain bounded retries for loading models without duplicate pending entries.
+- **Scanner tracking:** render brackets in the game UI using the current game frame, removing the independent desktop-overlay delay during camera turns. Small skeletal-pose jitter is filtered without smoothing camera or actor movement.
+- **Scanner appearance:** compact DPI-aware brackets and corrected colours; restore native faction icons with distance labels in the game-rendered scanner.
+- **Thermal coverage:** handle modular NPC components, including separate head parts, with identity/ownership checks when applying and restoring materials. The scanner does not change NPC visibility or AI.
+- **PDA compatibility:** restore the ZoneFPV tab for the runtime's supported class-path formats; keep it out of technician upgrade screens and reject replaced/stale native panels.
+- **Field-instrument styling:** native PDA backing, subdued amber selection, cream labels and native fonts; keep the existing menu organisation and functions.
+- **Player mouse capture:** stop restoring stale cursor state after FPV, PDA use and Alt+Tab, which could restrict mouse turning to the screen edges.
+- **Kamikaze feedback:** prevent the drone's own blast from starting player concussion/dirt sources; retain protection when immediately reentering FPV. NPC damage, impulse, sound and blast visuals remain; ordinary game grenades are unchanged.
+- **Aggression reset:** account for confirmed attacks on the drone even when an NPC has no current focused enemy between bursts. Hostility/targets present before flight are preserved.
+- **Performance work:** avoid recurring global controller searches, reuse resource-check file handles, remove blocking retries for unavailable effects and reuse collision clearance within the same frame. Precise obstacle checks remain. These changes do not establish a universal FPS gain or eliminate every crash.
 
-66 Lua suites passed, 139 Lua files passed syntax checks, and installed runtime files were hash-verified. The existing helper and native binaries are reused; this publication does not add a new binary build. **gameplay_verified=false: NPC disappearance and scanner recovery in a live game have not yet been confirmed.** Unloaded geometry/collision, reduced remote simulation in Alternative FPV and the known CNPP regional camera effect remain limitations. NIR/SWIR are visual approximations, not spectral simulations.
+## Retained from RC1
 
-## Installation
+Kamikaze, grenade-drop and combined combat modes; selectable vision/thermal palettes; lower camera and flashlight; artifact collection; world scanning; keyboard/mouse/controller/CH capture with Toggle/Hold; controller calibration; **the F6 settings menu duplicated inside PDA → ZoneFPV**. These are existing RC1 features, not new RC2 additions.
 
-1. Install UE4SS compatible with your exact S.T.A.L.K.E.R. 2 PC update separately.
-2. Close the game, extract the complete **ZoneFPV-0.3.0-RC1.zip** archive into a writable folder and run **Setup.cmd**. Select the game folder if needed.
-3. Connect a transmitter in USB Joystick mode or a gamepad, start the game and load a save.
-4. Open **PDA → ZoneFPV** or press **F6**; select/calibrate the device in **Settings → Controller** and check stick directions.
-5. Lower throttle in Acro/Angle or center it in 3D before entering FPV. Defaults: **F6 settings, F8 enter/leave FPV, F9 return to launch**; all can be reassigned. Close settings/PDA to fly.
+## Install / update
 
-Updates preserve preferences, calibration and the OSD layout, and create a backup of the previous mod. Download the attached installer ZIP rather than GitHub's automatic Source code archive. ZoneFPV does not bundle or replace UE4SS or other mods. End users do not need a compiler or Python. Vortex installation is not tested.
+1. Install UE4SS compatible with your exact S.T.A.L.K.E.R. 2 PC version separately.
+2. Close the game. Extract the complete **ZoneFPV-0.3.0-RC2.zip** archive and run **Setup.cmd**. Update Lua, EXE, DLL and PAK together, then restart the game.
+3. Open **PDA → ZoneFPV** or **F6**. Select/calibrate your USB Joystick transmitter or gamepad in **Settings → Controller**.
+4. Defaults: **F6 settings, F8 enter/leave FPV, F9 return to launch**. Lower throttle in Acro/Angle or centre it in 3D before entering FPV. Close the menu/PDA to fly.
 
-[Installation (EN/RU)](https://github.com/mrwinka/ZoneFPV/blob/main/SITE_INSTALL.md) · [Source](https://github.com/mrwinka/ZoneFPV) · [Nexus Mods](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
+Updates preserve preferences, calibration and the OSD layout and back up the previous mod. Download the attached installer ZIP; GitHub's automatic Source code archive is for development. No compiler or Python is required by players. UE4SS and other mods are not replaced. Vortex installation is untested.
+
+RC2 remains a release candidate. Automated tests cannot validate every game scene, NPC appearance or other-mod combination. Loading distance can increase RAM/streaming cost and cannot create missing collision; Alternative FPV retains reduced remote simulation. NIR/SWIR and battery behaviour are approximations. Older releases, including the author-tested stable 0.2.0, remain available.
+
+[Full feature list and source](https://github.com/mrwinka/ZoneFPV) · [Installation / troubleshooting](https://github.com/mrwinka/ZoneFPV/blob/main/SITE_INSTALL.md) · [Nexus Mods](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799)
 
 ## Русский
 
-0.3.0 RC1 — текущий кандидат в релиз. Старые версии сохранены.
+**Новое в RC2:** отключаемая эмуляция LiPo 300–20000 mAh, 2–8S с расходом от нагрузки, влиянием массы/напряжения на тягу, просадкой и восстановлением напряжения; показатель батареи в OSD и предупреждения LOW/LAND. Меню — **«Полёт → Основное»**. Новый полёт заряжает батарею, F9 сохраняет остаток.
 
-### Что добавилось по сравнению с 0.2.0
+**Исправления после опубликованной RC1:** повторное обнаружение активированных NPC; отрисовка рамок в текущем кадре игры и компактный вид сканера со значками фракций; покрытие модульных NPC тепловизором; появление вкладки ZoneFPV в обычном КПК и защита экрана техника; оформление «Полевой прибор»; захват мыши после FPV/КПК/Alt+Tab; налёт и контузия от собственного камикадзе, в том числе при немедленном повторном входе; сброс только вызванной дроном агрессии; сокращение лишних поисков, операций с файлами и повторных проверок столкновений.
 
-- **Меню в КПК.** Меню настроек F6 продублировано в КПК → ZoneFPV. Настройка пульта, калибровка и назначение кнопок открываются прямо внутри КПК. Оба меню используют общие сохранённые параметры.
-- **Дрон-камикадзе.** Взрывается при столкновении, если скорость удара превышает заданный порог. Можно настроить мощность взрыва и минимальную скорость удара, чтобы оставить возможность мягкой посадки.
-- **Дрон со сбросом гранат.** Сбрасывает активированные RGD-5 или F-1 по назначенной кнопке. Боезапас — от 1 до 20 гранат либо неограниченный. Остаток зарядов отображается во время полёта.
-- **Совмещённый боевой режим.** Один дрон может сбрасывать гранаты и одновременно работать как камикадзе. В меню показываются только параметры, подходящие выбранному типу дрона.
-- **Эффекты видения.** Добавлены ночные/инфракрасные режимы Starlight IR, NIR, SWIR и IR LED, а также тепловизионные палитры, включая White Hot, Black Hot, Rainbow и Ironbow. Выбранное видение включается назначенной кнопкой. Эффект аналоговой камеры переключается отдельно.
-- **Нижняя камера.** Позволяет смотреть прямо под дроном и вращается вместе с его корпусом. Можно включать переключением или держать активной только пока зажата кнопка/CH.
-- **Фонарик дрона.** После включения возможности в настройках переключается назначенной кнопкой.
-- **Сбор артефактов.** Дрон подбирает ближайший артефакт по назначенной кнопке. Дистанция сбора регулируется от 0,5 до 10 м. При удержании кнопки сбор повторяется по мере приближения к артефакту.
-- **Сканирование мира.** В FPV отображаются рамки и расстояния до загруженных NPC, мутантов и аномалий. Отображение сканера настраивается.
-- **Назначение кнопок.** Закрепляется та клавиша, кнопка мыши, кнопка пульта/геймпада или CH, которую вы нажали. Для всех назначений доступны «Переключение» и «Пока зажата»; при удержании кнопки сброса гранаты сбрасываются с интервалом.
-- **Настройка пульта.** Выбор устройства, профили и калибровка четырёх осей управления. USB-пульт можно подключать во время работы игры.
-- **Симуляция связи.** Настраиваются помехи и потеря сигнала из-за расстояния, препятствий и аномалий.
-
-### Исправления и проверка
-
-Списки настроек прокручиваются вверх/вниз. Разделы: «Полёт», «Изображение», «Оснащение», «Мир и связь», «Настройки». Переработаны возврат управления/фокуса и очистка эффектов камеры игрока. Сканер продолжает ждать позднюю загрузку NPC; перед восстановлением видимости проверяется, что снаряжение всё ещё принадлежит тому же персонажу.
-
-Прошли 66 Lua-наборов, проверка синтаксиса 139 файлов и сверка установленных файлов по хешам. Используются прежние вспомогательные и нативные бинарные файлы; новой бинарной сборки в этой публикации нет. **gameplay_verified=false: исчезновение NPC и восстановление сканера в живой игре ещё не подтверждены.** Остаются ограничения подгрузки геометрии/коллизий, удалённой симуляции в альтернативном FPV и региональный эффект у ЧАЭС. NIR/SWIR имитируют изображение, а не спектральную съёмку.
-
-### Установка
-
-1. Отдельно установить UE4SS, совместимый с вашей версией S.T.A.L.K.E.R. 2.
-2. Закрыть игру, полностью распаковать **ZoneFPV-0.3.0-RC1.zip** в доступную для записи папку и запустить **Setup.cmd**. При необходимости выбрать папку игры.
-3. Подключить пульт в USB-режиме Joystick или геймпад, запустить игру и загрузить сохранение.
-4. Открыть **КПК → ZoneFPV** или нажать **F6** → **«Настройки → Пульт»**, выбрать устройство, проверить направления и выполнить калибровку.
-5. В Acro/Angle опустить газ, в 3D держать по центру. По умолчанию: **F6 — настройки, F8 — вход/выход из FPV, F9 — возврат к старту**; кнопки переназначаются. Закрыть меню/КПК для полёта.
-
-При обновлении настройки, калибровка и расположение OSD сохраняются, создаётся резервная копия предыдущего мода. На GitHub скачивать приложенный установочный ZIP, а не автоматический архив Source code. UE4SS и другие моды не включены и не заменяются. Компилятор и Python пользователю не нужны. Установка через Vortex не проверена.
+**Сохранены возможности RC1:** вооружение, видение, сбор артефактов, нижняя камера, фонарик, свободные назначения кнопок/CH и **дублирование меню F6 в КПК**. При обновлении закрыть игру, распаковать весь архив и запустить **Setup.cmd**; настройки и калибровка сохраняются. Модель батареи приблизительная, гарантированный прирост FPS и устранение всех вылетов не заявляются.

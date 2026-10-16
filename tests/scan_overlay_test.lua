@@ -1,5 +1,9 @@
 local M=dofile('mod/Scripts/scan_overlay.lua')
 M.nativeBridge=nil
+-- This suite isolates the desktop packet/geometry contract. The game UMG
+-- adapter, its constructor diagnostics and runtime bindings have their own
+-- integration coverage in scan_view_test.lua.
+M.view=nil
 -- Envelope/protocol fixtures use a simple lens. The separate projection
 -- suite exercises the real five-probe lens against an independent oracle.
 local actualProjection,actualTargets=M.projection,M.targets
@@ -168,6 +172,21 @@ assert(M.factionIcon({102,103},{[102]=0,[103]=6})==0,'native Mutant NULL stops p
 assert(M.factionIcon({104},{[103]=6})==0,'unknown faction never receives a fabricated icon')
 metadataWriter(.52,nil);assert(frame()==0)
 M.nativeBridge=nil;FName=nil
+
+-- Native CDOs can be found by the shipping colon path even when the dot
+-- spelling misses. Keep normalization inside the engine viewport rather
+-- than depending on a separately measured desktop window.
+local originalFind=StaticFindObject
+local layoutLookups=0
+StaticFindObject=function(path)
+    layoutLookups=layoutLookups+1
+    if path=='/Script/UMG:Default__WidgetLayoutLibrary'then return layout end
+    assert(path=='/Script/UMG.Default__WidgetLayoutLibrary')
+end
+local colonLayoutWriter=M.new(root,{}, {},function()end)
+colonLayoutWriter(.53,s);assert(frame()==1 and layoutLookups==2)
+colonLayoutWriter(.54,s);assert(layoutLookups==2,'viewport library lookup remains cold and bounded')
+StaticFindObject=originalFind
 
 -- Marker disappearance clears immediately, even within the idle period.
 local clearingWriter=M.new(root,{}, {},function()end)

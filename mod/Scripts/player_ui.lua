@@ -1,4 +1,7 @@
--- Session-local UI suppression; never write the game's saved preferences.
+-- Session-local HUD/subtitle suppression; never write the game's saved preferences.
+-- Cursor display and relative mouse capture belong to the native viewport/UI.
+-- A saved bShowMouseCursor value is not an input-mode snapshot: restoring true
+-- after FPV/PDA/focus changes can release capture and bound look to screen edges.
 local M={}
 local observers={}
 local liveUI
@@ -49,11 +52,7 @@ function M.update(s,now,gameplay,menu)
     if not g then
         g={world=s.world,worldId=s.world:GetAddress(),pc=s.pc,gameplay=gameplay,widgets={},unsupported={},nextScan=0,pending={},active=true};s.playerUI=g
         observe(g)
-        attempt(g,'cursor snapshot',function() g.cursor=s.pc.bShowMouseCursor end)
         attempt(g,'subtitle snapshot',function() g.subtitles=gameplay:AreSubtitlesEnabled() end)
-    end
-    if not menu and g.cursor~=nil then
-        attempt(g,'cursor',function() if s.pc.bShowMouseCursor then s.pc.bShowMouseCursor=false end end)
     end
     if g.subtitles~=nil then
         attempt(g,'subtitles',function() if gameplay:AreSubtitlesEnabled() then gameplay:SetSubtitlesEnabled(false) end end)
@@ -120,7 +119,6 @@ end
 function M.restore(s,gameplay)
     local g=s.playerUI;if not g then return end
     g.active=false;if liveUI==g then liveUI=nil end
-    if g.cursor~=nil then pcall(function() g.pc.bShowMouseCursor=g.cursor end) end
     if g.subtitles~=nil then pcall(function() gameplay:SetSubtitlesEnabled(g.subtitles) end) end
     for _,entry in pairs(g.widgets) do
         restoreWidget(entry)

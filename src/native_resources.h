@@ -26,24 +26,87 @@ bool resourceArray(ResourceArray& out) {
     const auto game=GetModuleHandleW(nullptr);
     return verifiedImageIdentity(game) && resourceArrayBytes(reinterpret_cast<const unsigned char*>(game),out);
 }
+struct ResourceStatusFile {
+    HANDLE handle=INVALID_HANDLE_VALUE;
+    DWORD previousLength=0;
+    std::wstring requestedPath,openedName;
+    ResourceStatusFile()=default;
+    ResourceStatusFile(const ResourceStatusFile&)=delete;
+    ResourceStatusFile& operator=(const ResourceStatusFile&)=delete;
+    ~ResourceStatusFile() {close();}
+    void close() {
+        if (handle!=INVALID_HANDLE_VALUE) CloseHandle(handle);
+        handle=INVALID_HANDLE_VALUE;previousLength=0;requestedPath.clear();openedName.clear();
+    }
+    bool sameName(bool first) {
+        wchar_t name[32768]{};
+        const DWORD length=GetFinalPathNameByHandleW(handle,name,32768,FILE_NAME_NORMALIZED|VOLUME_NAME_DOS);
+        if (!length || length>=32768) return false;
+        if (first) {openedName.assign(name,length);return true;}
+        return openedName.size()==length && std::memcmp(openedName.data(),name,length*sizeof(wchar_t))==0;
+    }
+    bool write(const std::wstring& path,const char* packet,DWORD length) {
+        // The Lua owner reads this snapshot synchronously after poll returns.
+        // Reuse one shared handle instead of creating, closing and renaming
+        // a temporary file on every game-thread sample. No disk durability is
+        // needed for this disposable status; WriteFile completion makes the
+        // bytes available to that subsequent reader through the system cache.
+        if (handle!=INVALID_HANDLE_VALUE) {
+            FILE_STANDARD_INFO info{};
+            if (requestedPath!=path || !GetFileInformationByHandleEx(handle,FileStandardInfo,&info,sizeof(info)) ||
+                info.DeletePending || !sameName(false)) close();
+        }
+        if (handle==INVALID_HANDLE_VALUE) {
+            handle=CreateFileW(path.c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+            if (handle==INVALID_HANDLE_VALUE) return false;
+            requestedPath=path;
+            if (!sameName(true)) {close();return false;}
+        }
+        const LARGE_INTEGER start{};
+        DWORD written=0;
+        const bool good=SetFilePointerEx(handle,start,nullptr,FILE_BEGIN) &&
+            WriteFile(handle,packet,length,&written,nullptr) && written==length &&
+            (length>=previousLength || SetEndOfFile(handle));
+        if (!good) {
+            close();DeleteFileW(path.c_str());return false;
+        }
+        previousLength=length;return true;
+    }
+};
+struct ResourcePollLock {
+    SRWLOCK* lock;
+    explicit ResourcePollLock(SRWLOCK& value):lock(&value) {AcquireSRWLockExclusive(lock);}
+    ~ResourcePollLock() {ReleaseSRWLockExclusive(lock);}
+    ResourcePollLock(const ResourcePollLock&)=delete;
+    ResourcePollLock& operator=(const ResourcePollLock&)=delete;
+};
 }
+// Capability marker only. New Lua can retain an unbuffered reader because
+// this DLL overwrites the same status file instead of replacing its inode.
+// Older DLLs lack this export and keep the open/read/close reader path.
+extern "C" __declspec(dllexport) int zonefpv_resources_persistent_io(void*) {return 0;}
 extern "C" __declspec(dllexport) int zonefpv_resources_poll(void*) {
-    wchar_t filename[32768]{};
-    const auto length=GetModuleFileNameW(bridgeModule,filename,32768);
-    if (!length || length>=32768) return 0;
-    std::wstring directory(filename,length);
-    const auto slash=directory.find_last_of(L"\\/");if (slash==std::wstring::npos) return 0;
-    directory.resize(slash+1);
     MEMORYSTATUSEX memory{};memory.dwLength=sizeof(memory);
     if (!GlobalMemoryStatusEx(&memory)) return 0;
     ResourceArray array;const bool known=resourceArray(array);
+    static SRWLOCK lock=SRWLOCK_INIT;
+    const ResourcePollLock held(lock);
+    static std::wstring path;
+    static ResourceStatusFile output;
+    if (path.empty()) {
+        wchar_t filename[32768]{};
+        const auto length=GetModuleFileNameW(bridgeModule,filename,32768);
+        if (!length || length>=32768) return 0;
+        path.assign(filename,length);
+        const auto slash=path.find_last_of(L"\\/");
+        if (slash==std::wstring::npos) {path.clear();return 0;}
+        path.resize(slash+1);path+=L"native-resources-status.txt";
+    }
     static unsigned long long sequence=0;
-    const auto path=directory+L"native-resources-status.txt",temp=path+L".tmp";
-    FILE* output=nullptr;if (_wfopen_s(&output,temp.c_str(),L"wb") || !output) return 0;
-    const bool wrote=std::fprintf(output,"ZFPVR11 %llu %llu %llu %u %d %d\n",++sequence,
-        memory.ullAvailPhys/1048576ull,memory.ullAvailPageFile/1048576ull,known?1u:0u,array.highWater,array.maximum)>0;
-    const int closed=std::fclose(output);
-    if (wrote && closed==0) MoveFileExW(temp.c_str(),path.c_str(),MOVEFILE_REPLACE_EXISTING);
-    else DeleteFileW(temp.c_str());
+    char packet[160]{};
+    const int length=std::snprintf(packet,sizeof(packet),"ZFPVR11 %llu %llu %llu %u %d %d\n",++sequence,
+        memory.ullAvailPhys/1048576ull,memory.ullAvailPageFile/1048576ull,known?1u:0u,array.highWater,array.maximum);
+    if (length>0 && static_cast<std::size_t>(length)<sizeof(packet)) output.write(path,packet,static_cast<DWORD>(length));
     return 0;
 }

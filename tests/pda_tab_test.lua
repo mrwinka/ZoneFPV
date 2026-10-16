@@ -230,4 +230,18 @@ f.container.GetAllChildren=function()return {GetArrayNum=function()return #origi
     [1]={type=function()return 'RemoteUnrealParam'end,get=function()return original[1]end},[2]=original[2],[3]=original[3],[4]=original[4],[5]=original[5],[6]=original[6]}end
 tab=assert(create());tab:destroy();nativeUnchanged(f,6)
 f=setup();f.view.NavigationPanel.SlotContainer=nil;assert(not create()and creates==0,'No floating-button fallback')
-print('PASS native PDA tab cooked Create lifecycle, exact style/layout copy, bounded discovery, owned cleanup and allocation circuit breaker')
+f=setup();tab=assert(create());local abandonedTab=tab.widget
+local staleAccesses=0
+abandonedTab.IsValid=function()staleAccesses=staleAccesses+1;error('Recycled tab must not be accessed')end
+abandonedTab.RemoveFromParent=function()staleAccesses=staleAccesses+1;error('Recycled tab must not be detached')end
+tab:abandon();tab:abandon();tab:destroy()
+assert(staleAccesses==0 and #f.container.children==7,'Abandon must never call native cleanup on a recycled owner')
+local nativeSiblings={};for i=1,6 do nativeSiblings[i]=f.siblings[i]end
+f.container=obj('ReplacementTabs');f.container.children=nativeSiblings;f.siblings=nativeSiblings
+f.view.NavigationPanel.SlotContainer=f.container
+local fresh=assert(create());assert(fresh~=tab and creates==2,'Same owner wrapper can acquire a fresh tab after abandonment')
+fresh:destroy()
+
+f=setup();f.factoryThrows=true;assert(not create())
+f.factoryThrows=false;f.module.forget(f.view);assert(create(),'Old failed-construction marker must be releasable without engine calls')
+print('PASS native PDA tab cooked Create lifecycle, exact style/layout copy, bounded discovery, owned cleanup, no-call abandonment and allocation circuit breaker')

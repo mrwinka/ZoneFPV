@@ -151,7 +151,48 @@ void checkAlternatingScanFrameLease(){
     }
     std::cout<<"PASS alternating v4 scan snapshots: complete-slot selection, interrupted writes, no sequence rollback,100ms lease, empty/exit withdrawal, generation restart and permanent legacy retirement\n";
 }
+void checkBatteryTelemetry(){
+    const std::string prefix="6 61 1 10 20 30 0 0 45 0 60 0 50 0 100 0 0 0 100 0 -1 0 0 0 0 ";
+    osd::Data value;ULONGLONG seq=0;
+    {std::istringstream input(prefix+"1 85 23.4 12 225 1500 6 0 0 0 61");
+        assert(osd::parseTelemetry(input,value,seq)&&seq==61&&value.batteryEnabled&&value.batteryPercent==85
+            &&value.batteryVoltage==23.4&&value.batteryCurrent==12&&value.batteryUsed==225&&value.batteryCapacity==1500&&value.batteryCells==6);
+        assert(osd::batteryText(value)==L"BAT 85% 23.4V 12A 225mAh");}
+    value.batteryWarning=true;assert(osd::batteryText(value).find(L"BAT LOW ")==0);
+    value.batteryCritical=true;assert(osd::batteryText(value).find(L"BAT LAND ")==0);
+    value.batteryCritical=false;value.batteryDepleted=true;assert(osd::batteryText(value).find(L"BAT LAND ")==0);
+    for(const auto* tail:{"1 101 23.4 12 225 1500 6 0 0 0 61","1 85 41 12 225 1500 6 0 0 0 61",
+        "1 85 23.4 1001 225 1500 6 0 0 0 61","1 85 23.4 12 1501 1500 6 0 0 0 61",
+        "1 85 23.4 12 225 1525 6 0 0 0 61","1 85 23.4 12 225 1500 9 0 0 0 61",
+        "1 85 23.4 12 225 1500 6 2 0 0 61","0 85 0 0 0 0 0 0 0 0 61","0 0 0 0 0 0 0 1 0 0 61",
+        "1 85 23.4 12 225 1500 6 0 0 0 60","1 85 23.4 12 225 1500 6 0 0 0 61 extra"}){
+        std::istringstream input(prefix+tail);assert(!osd::parseTelemetry(input,value,seq)&&seq==61&&value.batteryDepleted);}
+    {std::istringstream input(prefix+"0 0 0 0 0 0 0 0 0 0 61");assert(osd::parseTelemetry(input,value,seq)&&!value.batteryEnabled);}
+    auto dc=CreateCompatibleDC(nullptr);BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth=1600;info.bmiHeader.biHeight=-900;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;
+    void* memory=nullptr;auto bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&memory,nullptr,0);assert(bitmap&&memory);
+    auto old=SelectObject(dc,bitmap);const auto before=osd::items;for(auto& item:osd::items)item.visible=false;
+    osd::items[14]={.22,.59,14,0,true};osd::data={};osd::data.active=true;RECT area{0,0,1600,900};
+    osd::draw(dc,area,false);assert(IsRectEmpty(&osd::bounds[14]));
+    osd::data.batteryEnabled=true;osd::data.batteryPercent=85;osd::data.batteryVoltage=23.4;
+    osd::draw(dc,area,false);assert(!IsRectEmpty(&osd::bounds[14])&&osd::bounds[14].left>=0&&osd::bounds[14].right<=1600);
+    for(const auto critical:{false,true}){osd::data.batteryWarning=true;osd::data.batteryCritical=critical;
+        std::fill(static_cast<DWORD*>(memory),static_cast<DWORD*>(memory)+1600*900,0u);osd::draw(dc,area,false);GdiFlush();
+        const auto expected=critical?0xff6e6eu:0xffdc3cu;
+        assert(std::find(static_cast<DWORD*>(memory),static_cast<DWORD*>(memory)+1600*900,expected)!=static_cast<DWORD*>(memory)+1600*900);}
+    osd::cursorMode=true;osd::draw(dc,area,false);assert(IsRectEmpty(&osd::bounds[14]));osd::cursorMode=false;
+    osd::items=before;osd::data={};SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+    std::cout<<"PASS v6 battery packet atomic validation, units and LOW/LAND rendering, disabled/menu hiding and safe bounds\n";
+}
 int main(int argc,char* argv[]){
+    checkBatteryTelemetry();
+    if(const auto fixture=argc==3?argv[2]:argc>4?argv[4]:nullptr){
+        std::ifstream input(fixture);osd::Data value;ULONGLONG seq=0;
+        assert(input&&osd::parseTelemetry(input,value,seq)&&seq==3&&value.batteryEnabled&&value.batteryPercent==85
+            &&value.batteryVoltage==23.4&&value.batteryCurrent==30&&value.batteryUsed==225&&value.batteryCapacity==1500&&value.batteryCells==6
+            &&value.batteryWarning&&value.batteryCritical&&!value.batteryDepleted);
+        std::cout<<"PASS actual Lua v6 battery packet consumed by production C++ reader\n";
+    }
     checkCrosshairs();
     checkScanFrameLease();
     checkAlternatingScanFrameLease();
@@ -300,13 +341,23 @@ int main(int argc,char* argv[]){
     assert(osd::save());osd::items=osd::defaults;osd::enabled=true;osd::crossStyle=0;osd::fontChoice=0;osd::load();assert(osd::fontChoice==7);
     assert(osd::items[0].x==.31&&osd::items[0].y==.67&&osd::items[0].size==48&&osd::items[0].color==3&&!osd::items[0].visible&&!osd::enabled&&osd::crossStyle==2);
     std::cout<<"PASS layout persistence\n";
+    {const auto saved=osd::items;
+        std::ofstream file(osd::root/L"osd-layout.txt");file<<"7 0 2 7 5 0\n";
+        for(size_t i=0;i<14;++i){const auto& item=saved[i];file<<item.x<<' '<<item.y<<' '<<item.size<<' '<<item.color<<' '<<item.visible<<'\n';}file.close();
+        osd::items[14]={.8,.8,72,4,false};assert(osd::load());
+        for(size_t i=0;i<14;++i){const auto& a=osd::items[i];const auto& b=saved[i];assert(std::tie(a.x,a.y,a.size,a.color,a.visible)==std::tie(b.x,b.y,b.size,b.color,b.visible));}
+        const auto& added=osd::items[14];const auto& expected=osd::defaults[14];assert(added.x==expected.x&&added.y==expected.y&&added.size==14&&added.visible);
+        osd::items[14]={.42,.32,28,3,false};assert(osd::save());osd::items=osd::defaults;assert(osd::load());
+        assert(osd::items[14].x==.42&&osd::items[14].y==.32&&osd::items[14].size==28&&osd::items[14].color==3&&!osd::items[14].visible);
+        osd::items=saved;assert(osd::save());}
+    std::cout<<"PASS v7 to v8 adds configurable battery without changing14 existing positions, and battery layout round trip\n";
     {osd::crossStyle=5;osd::downCrossStyle=3;osd::downCrossVisible=false;assert(osd::save());osd::crossStyle=0;osd::downCrossStyle=4;osd::downCrossVisible=true;osd::load();assert(osd::crossStyle==5&&osd::downCrossStyle==3&&!osd::downCrossVisible);
-        std::ofstream file(osd::root/L"osd-layout.txt");file<<"5 0 2 7\n";for(const auto& item:osd::items)file<<item.x<<' '<<item.y<<' '<<item.size<<' '<<item.color<<' '<<item.visible<<'\n';file.close();
+        std::ofstream file(osd::root/L"osd-layout.txt");file<<"5 0 2 7\n";for(size_t i=0;i<14;++i){const auto& item=osd::items[i];file<<item.x<<' '<<item.y<<' '<<item.size<<' '<<item.color<<' '<<item.visible<<'\n';}file.close();
         osd::load();assert(osd::crossStyle==2&&osd::downCrossStyle==4&&osd::downCrossVisible&&!osd::items[0].visible&&osd::items[0].x==.31);
         for(const auto* header:{"6 1 6 0 4","6 1 0 0 6","6 1 0 0 -1","6 1 0 0 4 extra","7 1 0 0 4 -1","7 1 0 0 4 2","7 1 0 0 4 1 extra"}){std::ofstream bad(osd::root/L"osd-layout.txt");bad<<header<<'\n';for(const auto& item:osd::defaults)bad<<item.x<<' '<<item.y<<' '<<item.size<<' '<<item.color<<' '<<item.visible<<'\n';bad.close();
             osd::load();assert(osd::crossStyle==2&&osd::downCrossStyle==4&&osd::downCrossVisible&&!osd::items[0].visible&&osd::items[0].x==.31);}}
     std::cout<<"PASS v7 independent lower visibility/style persistence, v5 all14-item migration and atomic malformed style rejection\n";
-    {std::ofstream file(osd::root/L"osd-layout.txt");file<<"6 0 5 7 3\n";for(const auto& item:osd::items)file<<item.x<<' '<<item.y<<' '<<item.size<<' '<<item.color<<' '<<item.visible<<'\n';file.close();
+    {std::ofstream file(osd::root/L"osd-layout.txt");file<<"6 0 5 7 3\n";for(size_t i=0;i<14;++i){const auto& item=osd::items[i];file<<item.x<<' '<<item.y<<' '<<item.size<<' '<<item.color<<' '<<item.visible<<'\n';}file.close();
         const auto before=osd::items;osd::downCrossVisible=false;osd::load();assert(!osd::enabled&&osd::crossStyle==5&&osd::fontChoice==7&&osd::downCrossStyle==3&&osd::downCrossVisible);
         for(size_t i=0;i<before.size();++i){const auto& a=before[i];const auto& b=osd::items[i];assert(a.x==b.x&&a.y==b.y&&a.size==b.size&&a.color==b.color&&a.visible==b.visible);}
         osd::crossStyle=2;osd::save();}

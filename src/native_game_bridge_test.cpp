@@ -60,9 +60,10 @@ void fixtureArm(std::uintptr_t core) {
     receiveCore.store(core,std::memory_order_release);
     ReleaseSRWLockExclusive(&stateLock);
 }
-std::array<unsigned char,0x90> attack(float damage,unsigned source) {
+std::array<unsigned char,0x90> attack(float damage,unsigned source,std::uint32_t attacker=23) {
     std::array<unsigned char,0x90> payload{};
     std::memcpy(payload.data(),&damage,sizeof(damage));payload[0x79]=static_cast<unsigned char>(source);
+    std::memcpy(payload.data()+0x20,&attacker,sizeof(attacker));
     return payload;
 }
 }
@@ -79,21 +80,24 @@ int main() {
     auto bullet=attack(17.5f,2);
     invoke(&player,bullet.data(),19);
     assert(state.incoming==1 && state.hits==1 && state.total==17.5 && originalCalls.load()==0);
-    auto bite=attack(11,5);invoke(&player,bite.data(),0);
+    assert(state.attackerCount==1 && state.attackerGuids[0]==23);
+    auto bite=attack(11,5,24);invoke(&player,bite.data(),0);
     assert(state.hits==2 && state.total==28.5 && originalCalls.load()==0);
-    invoke(&other,bullet.data(),73);
+    auto thirdParty=attack(17.5f,2,25);invoke(&other,thirdParty.data(),73);
     assert(originalCalls.load()==1 && forwardedFlags.load()==73 && lastPlayerAmount.load()==17.5f && state.hits==2);
+    assert(state.attackerCount==2 && state.attackerGuids[1]==24);
     for (unsigned source:{1u,19u,20u,21u,22u,44u,45u,47u}) {
-        auto environment=attack(30,source);invoke(&player,environment.data(),0);
+        auto environment=attack(30,source,100+source);invoke(&player,environment.data(),0);
     }
     assert(state.hits==2 && state.total==28.5 && originalCalls.load()==1);
     for (float amount:{0.f,-2.f,INFINITY,NAN}) {
-        auto invalid=attack(amount,2);invoke(&player,invalid.data(),0);
+        auto invalid=attack(amount,2,200);invoke(&player,invalid.data(),0);
     }
     assert(state.hits==2 && state.total==28.5 && originalCalls.load()==1);
+    assert(state.attackerCount==2 && "only real positive attacks directed at this proxy provide acquisition evidence");
     state.refreshed=GetTickCount64()-leaseMilliseconds-1;
-    invoke(&player,bullet.data(),3);
-    assert(originalCalls.load()==2 && state.hits==2);
+    auto late=attack(17.5f,2,201);invoke(&player,late.data(),3);
+    assert(originalCalls.load()==2 && state.hits==2 && state.attackerCount==2);
     fixtureArm(reinterpret_cast<std::uintptr_t>(&player));
     std::vector<std::thread> workers;
     for (int i=0;i<4;++i) workers.emplace_back([&](){
@@ -101,7 +105,7 @@ int main() {
         for (int n=0;n<4000;++n) invoke(&player,shot.data(),0);
     });
     for (auto& worker:workers) worker.join();
-    assert(state.hits==16000 && state.incoming==16000 && state.total==8000);
+    assert(state.hits==16000 && state.incoming==16000 && state.total==8000 && state.attackerCount==1 && state.attackerGuids[0]==23);
     // A synchronous disarm must preserve final counters and stop interception.
     AcquireSRWLockExclusive(&stateLock);state.core=0;ReleaseSRWLockExclusive(&stateLock);
     invoke(&player,bullet.data(),42);
@@ -112,7 +116,14 @@ int main() {
     assert(state.hits==2 && state.buttstockHits==1 && state.source==2 && state.total==42.5);
     auto emptyButtstock=attack(0.f,12);invoke(&player,emptyButtstock.data(),0);
     assert(state.buttstockHits==1 && originalCalls.load()==3);
-    fixtureArm(reinterpret_cast<std::uintptr_t>(&player));assert(state.buttstockHits==0);
+    fixtureArm(reinterpret_cast<std::uintptr_t>(&player));assert(state.buttstockHits==0 && state.attackerCount==0);
+    State bounded;bounded.guid=9999;
+    for (unsigned i=1;i<=200;++i) rememberIncomingAttacker(bounded,i);
+    for (unsigned i=1;i<=200;++i) rememberIncomingAttacker(bounded,i);
+    assert(bounded.attackerCount==128 && bounded.attackerGuids[0]==1 && bounded.attackerGuids[127]==128);
+    State rejected;rejected.guid=11;
+    for (unsigned guid:{11u,0xffffffffu,0xfffffff0u,0x08000000u}) rememberIncomingAttacker(rejected,guid);
+    assert(rejected.attackerCount==0);
     assert(MH_DisableHook(reinterpret_cast<void*>(&nativeFixture))==MH_OK);
     assert(MH_RemoveHook(reinterpret_cast<void*>(&nativeFixture))==MH_OK);
     assert(MH_CreateHook(reinterpret_cast<void*>(&scalarFixture),reinterpret_cast<void*>(&scalarHook),
@@ -197,6 +208,7 @@ int main() {
     pdaGeometryFixtureTests();
     std::cout << "PASS native detour: bullet and mutant damage intercepted, body calls canceled, other actors and expired leases forwarded, concurrent hits retained\n";
     std::cout << "PASS native buttstock counter: mixed melee/gun polling retains WeaponButt evidence; invalid damage ignored and new lease resets counter\n";
+    std::cout << "PASS native attacker UID evidence: actual detoured positive proxy attacks only, other recipients/environment/invalid/stale excluded, bounded128 deduplicated concurrent records and fresh-arm reset\n";
     std::cout << "PASS native scalar detour: exact MID/FName/global parameter zeroed, other materials/names/layers/identities/expired leases forwarded, five-argument ABI preserved\n";
     std::cout << "PASS native indexed scalar detour: cached index resolves exact FName/global entry, unrelated params and invalid indices forwarded, bool ABI preserved\n";
     std::cout << "PASS native metadata: actual core keys passed to relation ABI, faction parent cycles/depth/suffixed names bounded, stale core GUID and null actors rejected\n";

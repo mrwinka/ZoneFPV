@@ -6,6 +6,7 @@ local M={assets=dofile(here..'vision_asset_specs.lua'),clock=os.clock,modes=mode
     MAX_ACTORS=96,MAX_MESHES=512,MAX_COMPONENTS=256,MAX_SLOTS=128,MAX_PINS=2048,MAX_TARGET_MIDS=128,RANGE_CM=10000}
 M.needsTargets=modes.needsTargets
 local assetLoader=dofile(here..'asset_loader.lua').new()
+local parts=dofile(here..'vision_parts.lua')
 local function read(o,k)local ok,v=pcall(function()return o[k]end);if ok then return v end end
 local function invoke(o,k,...)
     return o[k](o,...)
@@ -36,6 +37,36 @@ local function load(g,path)
     if not ok or not valid(o)then once(g,'asset-'..path,path..': '..tostring(ok and why or o))end
     g.assets[path]=ok and valid(o) and o or false
     return valid(g.assets[path]) and g.assets[path] or nil
+end
+local function nativeClass(g,package,name,seed)
+    g.nativeClasses=g.nativeClasses or {}
+    local key=package..'.'..name
+    if valid(g.nativeClasses[key])then return g.nativeClasses[key]end
+    local function exact(class)
+        if valid(class)and call(class,'IsAnyClass')==true then
+            local full=call(class,'GetFullName')
+            full=type(full)=='string'and (full:match('^%S+%s+(.+)$')or full)
+            if full=='/Script/'..package..'.'..name or full=='/Script/'..package..':'..name then
+                g.nativeClasses[key]=class;return class
+            end
+        end
+    end
+    for _,separator in ipairs({'.',':'})do
+        local ok,class=pcall(StaticFindObject,'/Script/'..package..separator..name)
+        local found=ok and exact(class);if found then return found end
+    end
+    -- Some installed UE4SS builds cannot look up an already loaded class by
+    -- either spelling. Only this NPC's proven component/actor is a seed; walk
+    -- its native superclass chain without enumerating the world or loading it.
+    local class=call(seed,'GetClass')
+    for _=1,16 do
+        if not valid(class)then break end
+        local found=exact(class);if found then return found end
+        class=call(class,'GetSuperStruct')
+    end
+end
+local function meshCurrent(g,record,restoring)
+    return g.parts and g.parts:current(record.ownership,restoring)==true
 end
 local function pp(g)return valid(g.camera) and read(g.camera,'PostProcessSettings')end
 local function snapshotValue(v)
@@ -231,7 +262,9 @@ local function physicalRenderer(g,mesh)
         end
     end
     local asset=call(mesh,'GetSkinnedAsset')
+    if not valid(asset)then asset=call(mesh,'GetSkeletalMeshAsset')end
     if not valid(asset)then asset=read(mesh,'SkinnedAsset')end
+    if not valid(asset)then asset=read(mesh,'SkeletalMeshAsset')end
     if not valid(asset)then asset=read(mesh,'SkeletalMesh')end
     if valid(asset)then return asset,'skinned' end
     asset=read(mesh,'StaticMesh')
@@ -282,9 +315,11 @@ local function physicalSlot(g,mesh,slot,material,asset,kind)
     return eligible and mode==0
 end
 local function restoreSlot(g,record,slot,original)
+    if not meshCurrent(g,record,true)then return end
     if not sensorMaterial(g,call(record.mesh,'GetMaterial',slot))then return end
+    if not meshCurrent(g,record,true)then return end
     if original==false then call(record.mesh,'SetMaterial',slot,nil)
-    elseif valid(original)then call(record.mesh,'SetMaterial',slot,original)end
+    elseif parts.matches(record.originalIdentities[slot],original)then call(record.mesh,'SetMaterial',slot,original)end
 end
 local function clearOverlay(g,record)
     local mesh=record.mesh
@@ -296,9 +331,10 @@ local function clearOverlay(g,record)
     if not same(actual,record.overlay)then
         assert(pin(g,actual),'overlay material retention failed')
         if record.overlay then release(g,record.overlay)end
-        record.overlay=actual
+        record.overlay=actual;record.overlayIdentity=assert(parts.identity(actual),'overlay identity unavailable')
     end
     record.overlayOwned=true
+    assert(meshCurrent(g,record),'mesh ownership changed before overlay write')
     mesh:SetOverlayMaterial(nil)
     assert(nullMaterial(mesh:GetOverlayMaterial()),'overlay material readback mismatch: '..materialName(mesh))
     if not record.overlayVerified then
@@ -342,6 +378,7 @@ local function holdSecondaryPasses(g,record)
                 else
                     -- Retain ownership before calling: an exception after a
                     -- native write must not lose the restoration snapshot.
+                    if not meshCurrent(g,record)then return end
                     saved.owned=true
                     local ok,why=pcall(function()
                         mesh[spec.setter](mesh,false)
@@ -362,7 +399,7 @@ local function restoreSecondaryPasses(g,record)
         local saved=record.secondaryPasses and record.secondaryPasses[spec.key]
         -- A foreign write to true already restored the latest state. Never
         -- overwrite it or issue setters for a flag that was false throughout.
-        if saved and saved.owned and read(record.mesh,spec.key)==false then
+        if saved and saved.owned and meshCurrent(g,record,true)and read(record.mesh,spec.key)==false then
             local ok,why=pcall(function()
                 record.mesh[spec.setter](record.mesh,saved.value)
                 assert(read(record.mesh,spec.key)==saved.value,'secondary flag restoration readback mismatch')
@@ -374,9 +411,10 @@ local function restoreSecondaryPasses(g,record)
 end
 local function writeSensorSlot(g,record,slot)
     local mesh=record.mesh
+    assert(meshCurrent(g,record),'mesh ownership changed before material write')
     local key=tostring(record.id)..':'..slot
     local cached=g.cachedMIDs[key]
-    if not record.localMIDs[slot] and cached and valid(cached.mesh) and same(cached.mesh,mesh) and valid(cached.material)then
+    if not record.localMIDs[slot] and cached and parts.matches(cached.meshIdentity,mesh)and valid(cached.material)then
         record.localMIDs[slot]=cached.material
     end
     mesh:SetMaterial(slot,record.localMIDs[slot] or g.material)
@@ -394,6 +432,7 @@ local function writeSensorSlot(g,record,slot)
             -- A MID cannot be the parent of another MID. Use the cooked base
             -- and transfer the verified sensor parameters explicitly.
             local asset=g.materialSpec
+            assert(meshCurrent(g,record),'mesh ownership changed before local material creation')
             local localMID=mesh:CreateDynamicMaterialInstance(slot,g.assets[asset.path],FName('ZoneFPVTarget'))
             createdMID=localMID
             assert(valid(localMID) and pin(g,localMID),'component material retention failed')
@@ -428,7 +467,7 @@ local function writeSensorSlot(g,record,slot)
             -- Keep only verified instances in the bounded per-flight cache.
             -- Passive modes restore outfit slots; returning thermal reuses
             -- these pins instead of allocating another MID for the same slot.
-            g.cachedMIDs[key]={mesh=mesh,material=result}
+            g.cachedMIDs[key]={mesh=mesh,meshIdentity=record.ownership.identity,material=result}
             g.cachedMaterialIds[address(result)]=true
             g.stats.localMIDs=g.stats.localMIDs+1
             once(g,'local-mid','component-owned sensor verified on '..materialName(mesh)..' slot='..slot
@@ -438,10 +477,10 @@ local function writeSensorSlot(g,record,slot)
         if valid(createdMID)then
             -- A failed parameter/retention verification must not leave its
             -- assigned MID active or pinned until a later actor cleanup.
-            if same(actual,createdMID)then
+            if same(actual,createdMID)and meshCurrent(g,record,true)then
                 local original=record.originals[slot]
                 if original==false then call(mesh,'SetMaterial',slot,nil)
-                elseif valid(original)then call(mesh,'SetMaterial',slot,original)end
+                elseif parts.matches(record.originalIdentities[slot],original)then call(mesh,'SetMaterial',slot,original)end
             end
             local id=address(createdMID);if id then g.localMaterials[id]=nil end
             release(g,createdMID);record.localMIDs[slot]=nil
@@ -460,16 +499,16 @@ local function releaseLocalMID(g,material)
     release(g,material)
 end
 local function restoreMesh(g,record)
-    if valid(record.mesh) then
+    if meshCurrent(g,record,true)then
         for slot,original in pairs(record.originals)do
             restoreSlot(g,record,slot,original)
         end
-        if record.overlayOwned and valid(record.overlay)then
+        if record.overlayOwned and parts.matches(record.overlayIdentity,record.overlay)then
             local ok,overlay=pcall(function()return record.mesh:GetOverlayMaterial()end)
-            if ok and nullMaterial(overlay)then call(record.mesh,'SetOverlayMaterial',record.overlay)end
+            if ok and nullMaterial(overlay)and meshCurrent(g,record,true)then call(record.mesh,'SetOverlayMaterial',record.overlay)end
         end
         restoreSecondaryPasses(g,record)
-        if record.indirect~=nil then call(record.mesh,'SetAffectDynamicIndirectLighting',record.indirect)end
+        if record.indirect~=nil and meshCurrent(g,record,true)then call(record.mesh,'SetAffectDynamicIndirectLighting',record.indirect)end
     end
     for _,original in pairs(record.originals)do release(g,original)end
     if record.overlay then release(g,record.overlay)end
@@ -654,6 +693,7 @@ function M.apply(s,mode,log)
         fallbackAttempts={},targetMIDCount=0,localMaterials={},cachedMIDs={},cachedMaterialIds={},beamMeshes={},beamCount=0,rejectedMeshes={},rejectedMeshCount=0,
         stats={candidates=0,scans=0,components=0,slots=0,rejected=0,reapplied=0,localMIDs=0,attachments=0,lateSlots=0,nullSlots=0,overlays=0}}
     s.vision=g;g.mode=mode;g.spec=modes.modes[mode];g.pending=true;g.lutFailed=false
+    g.parts=g.parts or parts.new(g.world,s.pawn,s.camera)
     local ok,err=pcall(function()
         if g.spec.fusion then commit(g,s,nil);return end
         local warm=prewarmed
@@ -716,16 +756,18 @@ local function visitArray(a,limit,fn)
     for i=1,math.min(n,limit)do fn(unwrap(a[i]))end
 end
 local function captureOriginals(g,mesh,n,existing,asset,kind)
-    local originals={};local nulls=0
+    local originals,identities={},{};local nulls=0
     local ok,why=pcall(function()
         for slot=0,n-1 do
             if not existing or existing[slot]==nil then
                 local original=unwrap(mesh:GetMaterial(slot))
                 if not valid(original)then assert(nullMaterial(original),'material readback unavailable at slot '..slot)end
+                assert(not sensorMaterial(g,original),'sensor material cannot become an outfit restoration baseline')
                 if not physicalSlot(g,mesh,slot,original,asset,kind)then
                     -- Keep optics, cards and intentionally empty sections in
                     -- their original state while capturing the physical body.
                 elseif valid(original)then
+                    identities[slot]=assert(parts.identity(original),'material identity unavailable')
                     assert(pin(g,original),'material retention limit reached')
                     originals[slot]=original
                 else
@@ -740,11 +782,17 @@ local function captureOriginals(g,mesh,n,existing,asset,kind)
         once(g,'capture-originals',tostring(why)..'; component slots left intact')
         return
     end
-    return originals,nulls
+    return originals,nulls,identities
 end
 local function captureMesh(g,e,actorId,mesh,attachment)
     local id=address(mesh)
     if not id or g.meshes[id] then return end
+    local tracked=g.actors[actorId]
+    local ownership=tracked and g.parts:capture(tracked.root,mesh)
+    if not ownership then
+        once(g,'ownership-filter','retaining component without an exact current NPC attachment: '..materialName(mesh))
+        return
+    end
     local asset,kind=physicalRenderer(g,mesh)
     if not asset or read(e.actor,'bHidden')==true then return end
     if (g.rejectedMeshes[id] or -math.huge)>(g.now or 0)then return end
@@ -756,17 +804,18 @@ local function captureMesh(g,e,actorId,mesh,attachment)
         return
     end
     if #g.meshOrder>=M.MAX_MESHES then once(g,'mesh-cap','component safety limit reached; nearest actors are prioritized');return end
-    local r={id=id,mesh=mesh,actor=e.actor,actorId=actorId,entry=e,localMIDs={},nextAudit=0}
+    local r={id=id,mesh=mesh,actor=e.actor,actorId=actorId,entry=e,ownership=ownership,localMIDs={},nextAudit=0}
     -- Capture the complete component before replacing any slot. Exhausting the
     -- retention budget must not leave a head/torso half hot and half original.
-    local originals,nulls=captureOriginals(g,mesh,n,nil,asset,kind)
+    local originals,nulls,identities=captureOriginals(g,mesh,n,nil,asset,kind)
     if not originals or not next(originals)then return end
-    r.originals=originals
+    r.originals=originals;r.originalIdentities=identities
     g.meshes[id]=r;g.meshOrder[#g.meshOrder+1]=r
     local indirect=read(mesh,'bAffectDynamicIndirectLighting')
     if type(indirect)=='boolean' then
         r.indirect=indirect
         local ok,why=pcall(function()
+            assert(meshCurrent(g,r),'mesh ownership changed before indirect-light write')
             mesh:SetAffectDynamicIndirectLighting(false)
             assert(read(mesh,'bAffectDynamicIndirectLighting')==false,'indirect-light flag readback mismatch')
         end)
@@ -804,15 +853,16 @@ end
 local function auditMesh(g,r,now)
     if now<r.nextAudit then return end
     r.nextAudit=now+.2
+    if not meshCurrent(g,r)then return false end
     local asset,kind=physicalRenderer(g,r.mesh)
     if not asset or read(r.actor,'bHidden')==true then return false end
     -- Mesh generation can add outfit material slots to the same component.
     -- Capture the whole new set before writing, just as for initial capture.
     local n=call(r.mesh,'GetNumMaterials')
     if finite(n) and n%1==0 and n>=1 and n<=M.MAX_SLOTS and now>=(r.nextSlotCapture or 0)then
-        local added,nulls=captureOriginals(g,r.mesh,n,r.originals,asset,kind)
+        local added,nulls,identities=captureOriginals(g,r.mesh,n,r.originals,asset,kind)
         if added and next(added)then
-            for slot,original in pairs(added)do r.originals[slot]=original end
+            for slot,original in pairs(added)do r.originals[slot]=original;r.originalIdentities[slot]=identities[slot]end
             local changed=0
             local ok,why=pcall(function()
                 for slot in pairs(added)do writeSensorSlot(g,r,slot);changed=changed+1 end
@@ -824,7 +874,7 @@ local function auditMesh(g,r,now)
             else
                 g.stats.rejected=g.stats.rejected+1
                 for slot,original in pairs(added)do
-                    restoreSlot(g,r,slot,original);release(g,original);r.originals[slot]=nil
+                    restoreSlot(g,r,slot,original);release(g,original);r.originals[slot]=nil;r.originalIdentities[slot]=nil
                     local material=r.localMIDs[slot]
                     if material then
                         releaseLocalMID(g,material);r.localMIDs[slot]=nil
@@ -841,11 +891,12 @@ local function auditMesh(g,r,now)
     for slot,original in pairs(r.originals)do
         local readOK,current=pcall(function()return unwrap(r.mesh:GetMaterial(slot))end)
         if readOK and (valid(current) or nullMaterial(current)) and not sensorMaterial(g,current)then
-            if valid(current) and not same(current,original)then
+            if valid(current)and not parts.matches(r.originalIdentities[slot],current)then
+                local identity=parts.identity(current);if not identity then return end
                 if not pin(g,current)then return end
-                r.originals[slot]=current;release(g,original)
+                r.originals[slot]=current;r.originalIdentities[slot]=identity;release(g,original)
             elseif nullMaterial(current) and original~=false then
-                r.originals[slot]=false;release(g,original)
+                r.originals[slot]=false;r.originalIdentities[slot]=nil;release(g,original)
             end
             if physicalSlot(g,r.mesh,slot,current,asset,kind)then
                 local ok,why=pcall(function()writeSensorSlot(g,r,slot)end)
@@ -863,6 +914,9 @@ local function target(g,s,e,now)
     if not e or e.expired or not finite(e.type) or e.type<1 or e.type>2 or not near(s,e) or not current(s,e.actor)then return end
     local id=address(e.actor);if not id then return end
     local tracked=g.actors[id]
+    if tracked and (tracked.entry~=e or not g.parts:rootCurrent(tracked.root))then
+        restoreActor(g,id);tracked=nil
+    end
     if tracked and now<tracked.nextScan then return end
     if not tracked and g.actorCount>=M.MAX_ACTORS then
         local farthest,farId=distanceSq(s,e)
@@ -874,12 +928,14 @@ local function target(g,s,e,now)
         restoreActor(g,farId)
     end
     if not tracked then
-        tracked={entry=e};g.actors[id]=tracked;g.actorCount=g.actorCount+1;g.actorOrder[#g.actorOrder+1]=id
+        local root=g.parts:root(e);if not root then return end
+        tracked={entry=e,root=root};g.actors[id]=tracked;g.actorCount=g.actorCount+1;g.actorOrder[#g.actorOrder+1]=id
     end
     tracked.nextScan=now+1
     g.stats.scans=g.stats.scans+1
-    local class=load(g,'/Script/Engine.MeshComponent')
-    local flashlightClass=load(g,'/Script/Stalker2.FlashlightComponent')
+    local class=nativeClass(g,'Engine','MeshComponent',read(e.actor,'Mesh'))
+    local flashlightClass=nativeClass(g,'Stalker2','FlashlightComponent',read(e.actor,'FlashlightComponent'))
+    g.parts.agentClass=g.parts.agentClass or nativeClass(g,'Stalker2','Agent',e.actor)
     local pending,seen={},{};local childReads=0
     local function enqueue(component)
         component=unwrap(component)
@@ -1019,7 +1075,8 @@ function M.update(s,now)
             if #g.actorOrder==0 then break end
             g.actorCursor=g.actorCursor%#g.actorOrder+1
             local id=g.actorOrder[g.actorCursor];local row=g.actors[id]
-            if row.entry.expired or not near(s,row.entry) or not current(s,row.entry.actor)then restoreActor(g,id)end
+            if row.entry.expired or row.entry.suspended or not g.parts:rootCurrent(row.root)
+                or not near(s,row.entry)or not current(s,row.entry.actor)then restoreActor(g,id)end
         end
     end
     g.updateMs=(M.clock()-started)*1000;g.maxMs=math.max(g.maxMs or 0,g.updateMs)

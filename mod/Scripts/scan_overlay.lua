@@ -5,6 +5,7 @@ local here=debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])')
 M.nativeBridge=here and dofile(here..'native_bridge.lua')
 M.projection=here and dofile(here..'scan_projection.lua')
 M.targets=here and dofile(here..'world_experiments.lua')
+M.view=here and dofile(here..'scan_view.lua')
 local lastGeneration=0
 -- W_BinocularsView's serialized faction map, including its explicit NULL
 -- Mutant entry. Match numeric FNames; never stringify live native names.
@@ -74,7 +75,19 @@ local function currentBounds(actor,center,extent)
         and math.max(liveExtent.X,liveExtent.Y,liveExtent.Z)<10000 then return liveCenter,liveExtent end
     return capsuleBounds(actor)
 end
-local function skeletalBounds(actor,names,project,marker,center,extent)
+local function projectedPose(points,project)
+    local left,top,right,bottom=math.huge,math.huge,-math.huge,-math.huge
+    for _,p in ipairs(points)do
+        local x,y=project(p)
+        if not finite(x) or not finite(y)then return false end
+        left=math.min(left,x);right=math.max(right,x)
+        top=math.min(top,y);bottom=math.max(bottom,y)
+    end
+    if right<=0 or left>=1 or bottom<=0 or top>=1 then return false end
+    if right<=left or bottom<=top then return end
+    return left,top,right,bottom
+end
+local function skeletalBounds(actor,names,project,marker,center,extent,stabilize)
     local mesh
     if M.targets.markerMesh then
         mesh=M.targets.markerMesh(actor,marker)
@@ -96,20 +109,24 @@ local function skeletalBounds(actor,names,project,marker,center,extent)
         points[#points+1]=p
     end
     if math.max(high.X-low.X,high.Y-low.Y,high.Z-low.Z)<=1 then return end
-    local left,top,right,bottom=math.huge,math.huge,-math.huge,-math.huge
-    for _,p in ipairs(points)do
-        local x,y=project(p)
-        if not finite(x) or not finite(y)then return false end
-        left=math.min(left,x);right=math.max(right,x)
-        top=math.min(top,y);bottom=math.max(bottom,y)
-    end
     -- A genuine posed skeleton outside this camera stays hidden. A collapsed
     -- screen silhouette is unavailable, independently of its world pose.
-    if right<=0 or left>=1 or bottom<=0 or top>=1 then return false end
-    if right<=left or bottom<=top then return end
+    local left,top,right,bottom=projectedPose(points,project)
+    if not left then return left end
+    local history
+    if stabilize then
+        local filtered
+        filtered,history=stabilize(points,mesh)
+        if filtered then
+            local l,t,r,b=projectedPose(filtered,project)
+            -- Exact current visibility always wins, including camera-plane
+            -- crossings; filtered animation never revives an invisible pose.
+            if l then left,top,right,bottom=l,t,r,b else history=nil end
+        end
+    end
     local margin=(bottom-top)*.025
     left,right,top,bottom=clamp(left-margin),clamp(right+margin),clamp(top-margin),clamp(bottom+margin)
-    return (left+right)/2,(top+bottom)/2,right-left,bottom-top
+    return (left+right)/2,(top+bottom)/2,right-left,bottom-top,history
 end
 function M.bounds(center,extent,project)
     if not point(center) or not point(extent) or extent.X<=0 or extent.Y<=0 or extent.Z<=0 then return end
@@ -128,13 +145,10 @@ function M.bounds(center,extent,project)
     if width<=.0001 or height<=.0001 then return end
     return (left+right)/2,(top+bottom)/2,width,height
 end
-local function possiblyVisible(marker,project)
-    local entry=marker.entry
-    local center=point(entry and entry.center) or point(marker.position)
-    local extent=point(entry and entry.extent) or point(marker.extent)
+local function possiblyVisible(center,extent,project)
     if not center or not extent or math.min(extent.X,extent.Y,extent.Z)<=0 then return true end
-    -- This is only a cheap broad phase. Expand cached geometry to tolerate
-    -- animation/movement between cache refreshes; exact live bounds follow.
+    -- The center has already followed the actor's current live transform.
+    -- Expand its cached shape for animation/rotation before exact live bounds.
     extent={X=extent.X*2+500,Y=extent.Y*2+500,Z=extent.Z*2+500}
     local left,top,right,bottom=math.huge,math.huge,-math.huge,-math.huge
     local front=0
@@ -154,6 +168,8 @@ function M.new(root,flight,cfg,log)
     local seq,nextWrite,wasActive,hadMarkers=0,0,false,false
     local slots={root..'scan-frame-a.txt',root..'scan-frame-b.txt'}
     local initialized,publicationUnavailable=false,false
+    local view=M.view and M.view.new(log)
+    local nativeView,nextNativeHeartbeat=false,0
     local generation=math.max(lastGeneration+1,os.time()*1000000+math.floor((os.clock()%1)*1000000))
     -- Reloads may occur within one second, or after a wall-clock adjustment.
     -- Advance beyond both persisted slots before deleting their old session.
@@ -186,6 +202,51 @@ function M.new(root,flight,cfg,log)
     end
     local width,height,layout,layoutChecked,unavailable=0,0,nil,false,false
     local native,metadataSession,nextMetadata,metadata,metadataOwners= nil,nil,0,{},{}
+    local poseSession,poses=nil,{}
+    local function stabilizePose(marker,position,points,mesh,now)
+        local key=marker.identityAddress
+        if not finite(key) or key<=0 or key%1~=0 then return end
+        local offsets={}
+        for i,p in ipairs(points)do
+            offsets[i]={X=p.X-position.X,Y=p.Y-position.Y,Z=p.Z-position.Z}
+        end
+        local previous=poses[key]
+        local matches=false
+        if previous then
+            local ok,value=pcall(function()return previous.actor==marker.actor and previous.entry==marker.entry
+                and previous.world==marker.world and previous.name==marker.identityName and previous.mesh==mesh end)
+            matches=ok and value and #previous.offsets==#offsets
+        end
+        local dt=previous and now-previous.time or 0
+        local smooth=matches and dt>0 and dt<=.1
+        local changed=false
+        if smooth then
+            -- A teleport or a genuine large pose change snaps immediately.
+            -- Filter only small animation movement relative to the actor:
+            -- current actor translation and current camera are never delayed.
+            local old=previous.position
+            if math.max(math.abs(position.X-old.X),math.abs(position.Y-old.Y),math.abs(position.Z-old.Z))>1000 then smooth=false end
+            for i,p in ipairs(offsets)do
+                local q=previous.offsets[i]
+                local dx,dy,dz=p.X-q.X,p.Y-q.Y,p.Z-q.Z
+                local delta=dx*dx+dy*dy+dz*dz
+                if delta>35*35 then smooth=false;break end
+                if delta>1e-8 then changed=true end
+            end
+        end
+        local filtered
+        if smooth and changed then
+            local alpha=1-math.exp(-dt/.035)
+            filtered={}
+            for i,p in ipairs(offsets)do
+                local q=previous.offsets[i]
+                p.X=q.X+(p.X-q.X)*alpha;p.Y=q.Y+(p.Y-q.Y)*alpha;p.Z=q.Z+(p.Z-q.Z)*alpha
+                filtered[i]={X=position.X+p.X,Y=position.Y+p.Y,Z=position.Z+p.Z}
+            end
+        end
+        return filtered,{actor=marker.actor,entry=marker.entry,world=marker.world,name=marker.identityName,mesh=mesh,
+            position=position,offsets=offsets,time=now}
+    end
     local metadataUnavailable=false
     local projectionFailures={}
     local diagnosticSession,nextDiagnostic,diagnostic=nil,0,nil
@@ -205,8 +266,10 @@ function M.new(root,flight,cfg,log)
     local function dimensions(s)
         if not layoutChecked and type(StaticFindObject)=='function'then
             layoutChecked=true
-            local ok,v=pcall(StaticFindObject,'/Script/UMG.Default__WidgetLayoutLibrary')
-            if ok and valid(v)then layout=v end
+            for _,path in ipairs({'/Script/UMG.Default__WidgetLayoutLibrary','/Script/UMG:Default__WidgetLayoutLibrary'})do
+                local ok,v=pcall(StaticFindObject,path)
+                if ok and valid(v)then layout=v;break end
+            end
         end
         local size=valid(layout) and call(layout,'GetViewportSize',s.pc)
         local w,h=read(size,'X'),read(size,'Y')
@@ -225,12 +288,16 @@ function M.new(root,flight,cfg,log)
         return false
     end
     return function(now,s)
-        if not prepare()then return end
+        if not prepare()then if view then view:hide()end;return end
+        if s~=poseSession then poseSession=s;poses={} end
         local active=s~=nil
         local markers=active and s.worldExperiments and s.worldExperiments.markers or {}
         -- The current camera is applied in EngineTickPre. Publish on every
         -- camera frame; only an empty scanner uses slow idle housekeeping.
-        if #markers==0 and not hadMarkers and now<nextWrite and active==wasActive then return end
+        if #markers==0 and not hadMarkers and now<nextWrite and active==wasActive then
+            if view then view:update(s,{},width,height)end
+            return
+        end
         hadMarkers=#markers>0
         wasActive=active;seq=seq+1
         nextWrite=now+.1
@@ -242,7 +309,7 @@ function M.new(root,flight,cfg,log)
         local diagnose=log and worldState and worldState.options and worldState.options.characters
         local rows={}
         local candidates={}
-        if active then
+        if active and not s.inputPaused and not(s.radio and s.radio.lost)then
             for i=1,math.min(128,#markers)do
                 local marker=markers[i]
                 if diagnose and marker.type<=2 then diagnostic.selected=diagnostic.selected+1 end
@@ -275,39 +342,45 @@ function M.new(root,flight,cfg,log)
                 local actor=marker.actor
                 -- Read this actor's transform again at publication time. A
                 -- pooled/streamed actor cannot reuse old geometry or identity.
-                local visible=possiblyVisible(marker,project)
-                if diagnose and marker.type<=2 and not visible then diagnostic.viewCulled=diagnostic.viewCulled+1 end
-                if failed then break end
-                if visible and M.targets.markerCurrent(s,marker)then
+                if M.targets.markerCurrent(s,marker)then
                     if diagnose and marker.type<=2 then diagnostic.valid=diagnostic.valid+1 end
                     local current=point(call(actor,'K2_GetActorLocation'))
                     local old,center,extent=point(marker.actorPosition),point(marker.position),point(marker.extent)
                     if current and old and center and extent then
                         center={X=center.X+current.X-old.X,Y=center.Y+current.Y-old.Y,Z=center.Z+current.Z-old.Z}
-                        -- Characters fall back only to their current genuine
-                        -- collider; a cached capsule cannot revive a stale pose.
-                        local liveCenter,liveExtent=center,extent
-                        if marker.type<=2 then liveCenter,liveExtent=currentBounds(actor,center,extent)end
-                        local x,y,w,h
-                        if marker.type==1 then
-                            x,y,w,h=skeletalBounds(actor,bones,project,marker,liveCenter or center,liveExtent or extent)
-                        end
-                        -- nil means skeleton unavailable; false means a
-                        -- genuine skeleton is outside this camera's view.
-                        if x==nil and liveCenter and liveExtent then
-                            if diagnose and marker.type==1 then diagnostic.colliderFallback=diagnostic.colliderFallback+1 end
-                            x,y,w,h=M.bounds(liveCenter,liveExtent,project)
-                        end
+                        -- Cache refresh has its own bounded schedule. Read the
+                        -- genuine actor position before culling so movement or
+                        -- a teleport cannot hide a target behind its old center.
+                        local visible=possiblyVisible(center,extent,project)
+                        if diagnose and marker.type<=2 and not visible then diagnostic.viewCulled=diagnostic.viewCulled+1 end
                         if failed then break end
-                        local p=s.flight and s.flight.p
-                        local d=p and math.sqrt((current.X/100-p.x)^2+(current.Y/100-p.y)^2+(current.Z/100-p.z)^2)
-                        if x and marker.type and marker.type>=1 and marker.type<=4 and finite(d) and d>=0 then
-                            drawable[#drawable+1]={marker=marker,x=x,y=y,width=w,height=h,distance=d}
-                            -- Rejected/behind-camera actors do not consume
-                            -- the 16-row display and native metadata budget.
-                            if #drawable>=16 then break end
-                        elseif diagnose and marker.type<=2 then
-                            diagnostic.geometryRejected=diagnostic.geometryRejected+1
+                        if visible then
+                            -- Characters fall back only to their current genuine
+                            -- collider; a cached capsule cannot revive a stale pose.
+                            local liveCenter,liveExtent=center,extent
+                            if marker.type<=2 then liveCenter,liveExtent=currentBounds(actor,center,extent)end
+                            local x,y,w,h,pose
+                            if marker.type==1 then
+                                x,y,w,h,pose=skeletalBounds(actor,bones,project,marker,liveCenter or center,liveExtent or extent,
+                                    function(points,mesh)return stabilizePose(marker,current,points,mesh,now)end)
+                            end
+                            -- nil means skeleton unavailable; false means a
+                            -- genuine skeleton is outside this camera's view.
+                            if x==nil and liveCenter and liveExtent then
+                                if diagnose and marker.type==1 then diagnostic.colliderFallback=diagnostic.colliderFallback+1 end
+                                x,y,w,h=M.bounds(liveCenter,liveExtent,project)
+                            end
+                            if failed then break end
+                            local p=s.flight and s.flight.p
+                            local d=p and math.sqrt((current.X/100-p.x)^2+(current.Y/100-p.y)^2+(current.Z/100-p.z)^2)
+                            if x and marker.type and marker.type>=1 and marker.type<=4 and finite(d) and d>=0 then
+                                drawable[#drawable+1]={marker=marker,x=x,y=y,width=w,height=h,distance=d,pose=pose}
+                                -- Rejected/behind-camera actors do not consume
+                                -- the 16-row display and native metadata budget.
+                                if #drawable>=16 then break end
+                            elseif diagnose and marker.type<=2 then
+                                diagnostic.geometryRejected=diagnostic.geometryRejected+1
+                            end
                         end
                     elseif diagnose and marker.type<=2 then
                         diagnostic.geometryRejected=diagnostic.geometryRejected+1
@@ -349,6 +422,7 @@ function M.new(root,flight,cfg,log)
                 else metadataUnavailable=false end
             else metadata={} end
         end
+        local nextPoses,viewRows={},{}
         for _,item in ipairs(drawable)do
             local marker=item.marker
             if M.targets.markerCurrent(s,marker)then
@@ -361,19 +435,25 @@ function M.new(root,flight,cfg,log)
                 if not finite(relation) or relation%1~=0 or relation< -1 or relation>4 then relation=-1 end
                 local faction=record and M.factionIcon(record.names,iconNames) or 0
                 rows[#rows+1]=string.format('%d %.7f %.7f %.7f %.7f %.2f %d %d',marker.type,item.x,item.y,item.width,item.height,item.distance,relation,faction)
+                viewRows[#viewRows+1]={type=marker.type,x=item.x,y=item.y,width=item.width,height=item.height,
+                    distance=item.distance,relation=relation,faction=faction}
+                if item.pose then nextPoses[marker.identityAddress]=item.pose end
                 if diagnose and marker.type<=2 then diagnostic.published=diagnostic.published+1 end
             end
         end
+        -- Only the at-most-sixteen current visible identities retain history.
+        -- LOD/collider fallback, disappearance and stale identities drop it.
+        poses=nextPoses
         if diagnose and now>=nextDiagnostic then
             nextDiagnostic=now+5
             local found=worldState.scannerDiagnostics or {}
-            log(string.format('Scanner NPC: observed=%d cached=%d live=%d hidden=%d suspended=%d retired=%d retired_actor=%d retired_identity=%d retired_world=%d retired_dead=%d dead_rejected=%d actor_rejected=%d mesh_pending=%d position_pending=%d ready_in_range=%d selected_npc=%d dropped_by_limit=%d selected=%d view_culled=%d valid=%d published=%d geometry_rejected=%d collider_fallback=%d projection=%s',
+            log(string.format('Scanner NPC: observed=%d cached=%d live=%d hidden=%d suspended=%d retired=%d retired_actor=%d retired_identity=%d retired_world=%d retired_dead=%d dead_rejected=%d actor_rejected=%d mesh_pending=%d position_pending=%d ready_in_range=%d selected_npc=%d dropped_by_limit=%d selected=%d view_culled=%d valid=%d published=%d geometry_rejected=%d collider_fallback=%d projection=%s agent_lookups=%d reconciliations=%d pending=%d',
                 found.observed or 0,found.cached or 0,found.live or 0,found.hidden or 0,found.suspended or 0,
                 found.retired or 0,found.retiredActor or 0,found.retiredIdentity or 0,found.retiredWorld or 0,found.retiredDead or 0,found.deadRejected or 0,
                 found.actorRejected or 0,found.meshPending or 0,found.positionPending or 0,
                 found.readyInRange or 0,found.selectedNPC or 0,found.droppedByLimit or 0,
                 diagnostic.selected,diagnostic.viewCulled,diagnostic.valid,diagnostic.published,diagnostic.geometryRejected,diagnostic.colliderFallback,
-                diagnostic.projection or 'no_targets'))
+                diagnostic.projection or 'no_targets',found.agentLookups or 0,found.reconciliations or 0,worldState.queued or 0))
             diagnostic.selected,diagnostic.viewCulled,diagnostic.valid,diagnostic.published,diagnostic.geometryRejected,diagnostic.colliderFallback=0,0,0,0,0,0
             diagnostic.projection=nil
             -- Fixed engine getters only, once per diagnostic interval. This
@@ -395,6 +475,14 @@ function M.new(root,flight,cfg,log)
                     tostring(s.previousMovementTick),visibility and visibility.rejected or 0))
             end
         end
+        -- Game-owned UMG travels through the same rendering/frame-generation
+        -- pipeline as the NPC image. The desktop helper must not paint a
+        -- second, independently queued set of rectangles over that frame.
+        local gameFrame=view and view:update(s,viewRows,width,height)or false
+        if gameFrame then rows={}end
+        if gameFrame and nativeView and now<nextNativeHeartbeat then return end
+        nativeView=gameFrame
+        if gameFrame then nextNativeHeartbeat=now+.1 end
         -- Windows Lua cannot atomically rename over an existing file. Write
         -- alternating slots instead; header/trailer identify complete frames,
         -- and the reader keeps the other coherent slot while this one changes.

@@ -1,72 +1,79 @@
-# ZoneFPV installation and troubleshooting / Установка и устранение неполадок
-
-**Current recommended release candidate: 0.3.0 RC1.** Latest NPC/scanner fixes have offline verification only (`gameplay_verified=false`). Older releases, including author-tested 0.2.0, remain available.
+# ZoneFPV 0.3.0 RC2 — installation and troubleshooting / Установка
 
 ## English
 
-1. Install UE4SS compatible with your exact game update separately. See [requirements](DEPENDENCIES.md) and [UE4SS releases](https://github.com/UE4SS-RE/RE-UE4SS/releases). Keep the settings required by that runtime. The 0.3.0 native paths require supported game-thread execution; never switch to unsafe ProcessEvent as a workaround.
-2. Download the attached **ZoneFPV-0.3.0-RC1.zip** installer from the [latest GitHub release](https://github.com/mrwinka/ZoneFPV/releases/latest). The automatic Source code archive does not contain the ready-to-use runtime. The [Nexus file](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) is currently quarantined and unavailable.
-3. Close the game. Extract the complete ZIP into a writable folder and run **Setup.cmd**. If prompted, select the installation folder containing `Stalker2`.
-4. Connect a transmitter in **USB Joystick/HID** mode or a gamepad, launch the game and load a save. The input helper starts automatically.
-5. Open **PDA → ZoneFPV → Settings → Controller**, or **F6 → Settings → Controller**. Select the device and profile, verify stick directions and run the four-axis calibration wizard if needed. No external F6 window is needed for PDA calibration.
-6. In **Settings → Buttons**, click the action and press the desired keyboard/mouse/controller button or move the CH switch. Choose Toggle or Hold. Defaults are **F6 settings, F8 FPV, F9 return to launch**; other actions start unbound.
-7. Lower throttle for Acro/Angle or center it for 3D, then press F8. Close settings/PDA to fly; F8 exits FPV.
+1. Install a UE4SS runtime compatible with your exact S.T.A.L.K.E.R. 2 update. See [dependencies](DEPENDENCIES.md) and [UE4SS releases](https://github.com/UE4SS-RE/RE-UE4SS/releases). Keep the runtime's required settings; EngineTick is supported.
+2. Download **ZoneFPV-0.3.0-RC2.zip** from [Nexus](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) or [GitHub Releases](https://github.com/mrwinka/ZoneFPV/releases). Choose the attached installer, not GitHub's automatic Source code archive.
+3. Close the game, extract the complete ZIP into a writable folder and run **Setup.cmd**. If prompted, select the installation folder containing `Stalker2`. Lua, EXE, DLL and PAK must be updated together. Restart the game after installation.
+4. Connect a transmitter in **USB Joystick/HID** mode or a gamepad. Launch the game and load a save. The input helper starts automatically.
+5. Open **PDA → ZoneFPV** or **F6 → Settings → Controller**. Select the device, check four-axis directions and calibrate if needed. Settings and calibration work inside the PDA; a separate F6 window is not required.
+6. In **Settings → Buttons**, capture the keyboard/mouse/controller button or CH you want for each action. Toggle and Hold are available. Defaults: **F6 settings, F8 enter/leave FPV, F9 return to launch**.
+7. Lower throttle in Acro/Angle or centre it in 3D before F8. Close the PDA/settings to fly.
 
-Both menus share preferences and offer Flight, Image, Equipment, World and signal, and Settings. Long lists scroll with the wheel, Up/Down or PageUp/PageDown. **Image → OSD** contains the draggable preview, all 14 indicator choices and independent normal/lower-camera crosshairs. Flashlight/lower-camera checkboxes permit their assigned inputs; enabling a permission does not itself activate the feature.
+### Battery and loadout
 
-**Equipment → Combat mode** offers unarmed, kamikaze, grenade-drop and combined modes. Choose the loadout before a new flight. Capacity has 1–20 charges then Unlimited at the right end. F9 does not refill; a new flight does. With no vision binding, the selected vision starts on FPV entry.
+**Flight → Main** contains optional battery simulation: **300–20000 mAh, 2–8S**, default 1500 mAh/6S. A larger pack increases mass; voltage and load affect available thrust and consumption. New flights receive a full pack. F9 preserves remaining charge. Menus/focus pauses do not consume charge. Depletion cuts thrust, then returns control after a short fall. Changing battery settings during flight ends it; the next launch uses the new pack. Disable simulation for unrestricted battery duration.
 
-Updates preserve preferences, calibration and OSD, and back up the previous mod beside the extracted installer. UE4SS and other mods are not bundled/replaced. End users do not need Visual Studio or Python. Vortex installation is not tested. To remove ZoneFPV with the game closed, run `Uninstall.ps1 -GameRoot 'game folder'` in PowerShell.
+In **Equipment → Combat mode**, select normal, kamikaze, grenade drop or combined. **Image → OSD** configures telemetry/crosshairs and the new battery item; select and drag preview labels to move them. The same preferences apply in the PDA and F6.
 
-For the optional manual `gc.MaxObjectsInGame` override, use **Settings → General**, save to Engine.ini and restart the game. This changes game-wide object capacity and persists after FPV. Higher capacity can increase RAM use, loading time and garbage-collection pauses. [Details and reset](OBJECT_LIMIT.md).
+### Updating and removing
 
-Main FPV moves the simulation anchor with the drone. Alternative FPV keeps it at launch; distant NPC simulation and collision can be incomplete. Increased loading distance increases load and does not guarantee all geometry/collision. The CNPP regional black effect and quest weather remain known limitations. Borderless/windowed play is recommended for the native overlay.
+Updates preserve preferences, calibration and OSD positions and store the previous mod in `backups` beside the extracted installer. No compiler or Python is needed by players. UE4SS and other mods are not replaced. Vortex installation is not tested.
+
+With the game closed, run `Uninstall.ps1 -GameRoot 'game folder'` in PowerShell to remove ZoneFPV while keeping UE4SS and other mods. See the script's parameters for the target game folder.
+
+The optional global object limit is in **Settings → General**: `gc.MaxObjectsInGame` → Save to Engine.ini, followed by a game restart. Raising it does not improve FPS and can increase RAM use/loading/GC pauses. [Details and default reset](OBJECT_LIMIT.md).
 
 ### Troubleshooting
 
-- **Installer cannot find the game:** select the folder containing `Stalker2`. If access is denied, check folder permissions or run Setup.cmd as administrator.
-- **F6/F8 or the PDA page do nothing:** load a save, check ZoneFPV is enabled in `ue4ss/Mods/mods.txt`, and inspect `ue4ss/UE4SS.log`, `Mods/ZoneFPV/input-bridge-error.log` and `bridge-start-error.log`. A helper window alone does not prove the Lua mod is running.
-- **Controller is missing:** confirm USB DATA and Joystick/HID mode, a data-capable cable and the device's presence in Windows. Reopen Settings → Controller to select the detected physical/virtual interface. The mod cannot read a device Windows does not expose.
-- **Wrong axes/calibration fails:** select the intended device, inspect the current error and check directions before calibration. Custom radio models, adapters and Steam Input can expose different channels or duplicate physical/virtual devices.
-- **FPV will not enter:** check neutral throttle for the selected mode and fresh controller data. Changing flight mode ends a current flight. Real disconnect/stale input still ends FPV; brief sample delays may pause it.
-- **OSD placement:** click/select an indicator in the preview and drag it; the vertical list also selects hidden indicators. Release saves the change. Leaving the section/focus cancels unfinished dragging/capture/calibration.
-- **Lost custom menu key:** with the game closed, remove only `bindings.txt` from the installed mod to restore F6/F8/F9.
-- **NPC models disappear or scanner misses them:** latest recovery is not verified in a live game. Include the full relevant `UE4SS.log`, vision/main-or-alternative mode, reproduction steps and whether models return after exiting FPV. Do not treat offline tests as proof that this symptom is resolved.
-- **Missing distant collision or black CNPP view:** these are known limits. Try main FPV and allow streaming time; missing collision cannot be guaranteed by this mod.
+- **Game folder not found:** choose the folder containing `Stalker2`. If access is denied, run Setup.cmd as administrator.
+- **F6/F8 do nothing:** load a save and check ZoneFPV in `ue4ss/Mods/mods.txt`; read `UE4SS.log`, `Mods/ZoneFPV/input-bridge-error.log` and `bridge-start-error.log`. A helper window alone does not establish that Lua loaded.
+- **No controller or wrong axes:** use a data USB port/cable, choose Joystick/HID on the transmitter, select the actual device and calibrate. Physical and virtual controllers may appear separately.
+- **FPV will not enter:** check throttle neutral for the chosen mode, fresh controller data and that menus are closed.
+- **FPV loses thrust:** check battery and simulated signal status; a depleted pack requires a new flight.
+- **Scanner report:** include whether NPC models or only markers disappear, selected vision and main/alternative mode. Attach `UE4SS.log` and `performance.txt`. The scanner logs whether game-frame UI or the fallback renderer is active.
+- **Screenshot misses the external OSD:** try **Win + Print Screen**. Opening an area-selection tool takes focus and pauses/hides the external overlay.
+- **Distant clipping/geometry:** main FPV follows the drone with the simulation anchor; Alternative FPV leaves it at launch. Allow streaming time. More loading distance can reduce FPS and cannot guarantee unloaded collision.
+- **Regional CNPP black effect or quest weather:** these remain separate limitations; the RC2 kamikaze feedback fix does not claim to remove regional effects.
+- **Lost menu binding:** with the game closed, remove only `bindings.txt` from the installed ZoneFPV folder to restore F6/F8/F9.
 
-For a report, include ZoneFPV/game/UE4SS versions, device/interface, flight/FPV/vision modes, loading multiplier, other mods, reproduction steps and relevant logs/video.
+For bug reports, include game/UE4SS/ZoneFPV versions, controller/interface, main/alternative and Acro/Angle/3D, loading multiplier, other mods, reproduction steps and relevant logs/video. RC2 remains a release candidate.
 
 ## Русский
 
-**Текущий рекомендуемый кандидат в релиз — 0.3.0 RC1.** Последние исправления NPC/сканера проверены вне игры (`gameplay_verified=false`). Старые выпуски, включая проверенную автором 0.2.0, остаются доступны.
+1. Отдельно установите UE4SS для вашей версии S.T.A.L.K.E.R. 2. Ссылки — [DEPENDENCIES.md](DEPENDENCIES.md). Сохраните настройки, требуемые UE4SS; EngineTick поддерживается.
+2. Скачайте **ZoneFPV-0.3.0-RC2.zip** с [Nexus](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) или из [выпусков GitHub](https://github.com/mrwinka/ZoneFPV/releases). Нужен приложенный установщик, а не автоматический Source code.
+3. Закройте игру, полностью распакуйте ZIP в доступную для записи папку и запустите **Setup.cmd**. Выберите папку, содержащую `Stalker2`, если нужно. Lua, EXE, DLL и PAK обновляются вместе. После установки запустите игру заново.
+4. Подключите пульт в **USB Joystick/HID** или геймпад, запустите игру и загрузите сохранение. Программа ввода запускается автоматически.
+5. Откройте **КПК → ZoneFPV** или **F6 → «Настройки → Пульт»**. Выберите устройство, проверьте четыре оси и при необходимости выполните калибровку. Всё работает прямо внутри КПК, отдельное окно F6 не требуется.
+6. В **«Настройки → Кнопки»** нажмите назначение, затем нужную клавишу, кнопку мыши/пульта или CH. Доступны переключение и удержание. По умолчанию: **F6 — настройки, F8 — вход/выход из FPV, F9 — возврат к старту**.
+7. В Acro/Angle опустите газ, в 3D держите по центру, затем F8. Закройте меню/КПК для полёта.
 
-1. Отдельно установите UE4SS для точной версии игры. [Требования](DEPENDENCIES.md), [выпуски UE4SS](https://github.com/UE4SS-RE/RE-UE4SS/releases). Сохраните нужные ему настройки; не переключайте выполнение на небезопасный ProcessEvent как обход ошибки.
-2. Скачайте приложенный установщик **ZoneFPV-0.3.0-RC1.zip** из [последнего выпуска GitHub](https://github.com/mrwinka/ZoneFPV/releases/latest). Автоматический Source code не содержит готовый runtime. [Файл Nexus](https://www.nexusmods.com/stalker2heartofchornobyl/mods/2799) сейчас в карантине и недоступен.
-3. Закройте игру, распакуйте архив целиком и запустите **Setup.cmd**. При необходимости выберите папку, содержащую `Stalker2`.
-4. Подключите пульт через USB DATA в режиме **Joystick/HID** или геймпад. Запустите игру и загрузите сохранение; помощник ввода запускается автоматически.
-5. Откройте **КПК → ZoneFPV → Настройки → Пульт** либо **F6 → Настройки → Пульт**. Выберите устройство/профиль, проверьте направления и при необходимости пройдите калибровку четырёх осей. В КПК внешний F6 не открывается.
-6. В **«Настройки → Кнопки»** нажмите действие и нужную кнопку клавиатуры/мыши/пульта либо переведите CH. Для каждого назначения доступны переключение/удержание. По умолчанию **F6 — настройки, F8 — FPV, F9 — возврат к старту**; остальные действия не назначены.
-7. В Acro/Angle опустите газ, в 3D держите по центру; нажмите F8. Закройте меню/КПК для полёта. F8 выходит из FPV.
+### Батарея и оснащение
 
-Меню имеют общие настройки и пять групп: «Полёт», «Изображение», «Оснащение», «Мир и связь», «Настройки». Списки прокручиваются колёсиком, вверх/вниз или PageUp/PageDown. В **«Изображение → OSD»** находятся перетаскиваемый предпросмотр, все 14 показателей и отдельные прицелы камер. Переключатели фонарика/нижней камеры разрешают работу назначенных кнопок, сами функцию не активируют.
+В **«Полёт → Основное»** настраивается эмуляция батареи: **300–20000 mAh, 2–8S**, по умолчанию 1500 mAh/6S. Большая батарея увеличивает массу; напряжение и нагрузка влияют на тягу и расход. Новый полёт получает полный заряд, F9 сохраняет остаток. Меню и потеря фокуса заряд не расходуют. При разряде тяга отключается, после короткого падения управление возвращается персонажу. Изменение батареи завершает текущий полёт; следующий запуск использует новые параметры. Эмуляцию можно выключить.
 
-В **«Оснащение → Боевой режим»** доступны обычный дрон, камикадзе, сброс гранат и совмещённый режим. Оснащение выбирается перед новым полётом. Количество — 1–20, затем «Неограниченно» справа. F9 не пополняет боезапас; новый полёт пополняет. Без кнопки видения выбранный эффект включается при входе в FPV.
+В **«Оснащение → Боевой режим»** выберите обычный, камикадзе, сброс гранат или совмещённый вариант. В **«Изображение → OSD»** настраиваются показатели, прицелы и батарея; для перемещения нажмите и перетащите элемент предпросмотра. КПК и F6 используют общие настройки.
 
-Обновление сохраняет настройки, калибровки и OSD; предыдущий мод резервируется рядом с распакованным установщиком. UE4SS и другие моды не заменяются, компилятор/Python не требуются. Vortex не проверен. Удаление при закрытой игре: `Uninstall.ps1 -GameRoot 'папка игры'`.
+### Обновление и удаление
 
-Лимит `gc.MaxObjectsInGame`: **«Настройки → Общие»** → сохранить в Engine.ini → перезапустить игру. Это общая ёмкость объектов, действующая после FPV; увеличение может повысить RAM, время загрузки и паузы очистки. [Подробности и сброс](OBJECT_LIMIT.md).
+Настройки, калибровка и положение OSD сохраняются; предыдущий мод копируется в `backups` рядом с распакованным установщиком. Компилятор и Python игроку не нужны. UE4SS и другие моды не заменяются. Vortex не проверен.
 
-Основной FPV переносит центр симуляции с дроном, альтернативный оставляет его на старте. NPC вдали и коллизии могут быть неподгружены. Большая дальность повышает нагрузку и не гарантирует всю карту. Чёрный эффект у ЧАЭС/квестовая погода могут оставаться; для внешнего OSD рекомендуется окно без рамки.
+Для удаления при закрытой игре выполните `Uninstall.ps1 -GameRoot 'папка игры'` в PowerShell. UE4SS и другие моды сохраняются.
+
+Необязательный лимит объектов находится в **«Настройки → Общие»**: `gc.MaxObjectsInGame` → «Сохранить в Engine.ini», затем перезапуск игры. Это глобальная ёмкость Unreal-объектов, не настройка FPS; повышение может увеличить расход RAM, загрузку и паузы очистки памяти. [Подробности и возврат по умолчанию](OBJECT_LIMIT.md).
 
 ### Если что-то не работает
 
-- Нет F6/F8/вкладки: загрузить сохранение, проверить `mods.txt`, `UE4SS.log`, `input-bridge-error.log`, `bridge-start-error.log`.
-- Нет пульта: проверить USB DATA, Joystick/HID, кабель с передачей данных и устройство в Windows. Выбрать нужный физический/виртуальный интерфейс в «Настройки → Пульт».
-- Неверные оси/ошибка калибровки: проверить выбранное устройство, конкретный текст ошибки и направления. Модель пульта, адаптер и Steam Input могут менять каналы.
-- Нет входа в FPV: проверить нейтраль газа и свежие данные пульта. Смена режима завершает полёт; реальное отключение/устаревание данных сохраняет выход по безопасности.
-- OSD: выбрать показатель в предпросмотре/списке и перетащить. Отпускание сохраняет; выход из раздела/потеря фокуса отменяет незавершённые действия.
-- Потеря кнопки меню: при закрытой игре удалить только `bindings.txt` для возврата F6/F8/F9.
-- Исчезают NPC/не ловит сканер: исправление в живой игре ещё не подтверждено. Приложить журнал, режимы FPV/видения, шаги и информацию, появляются ли NPC после выхода.
-- Чёрный эффект ЧАЭС/неподгруженные коллизии: известные ограничения; использовать основной FPV и дать миру загрузиться.
+- **Нет папки игры:** выберите папку, содержащую `Stalker2`. При отказе доступа запустите Setup.cmd от администратора.
+- **F6/F8 не работают:** загрузите сохранение, проверьте ZoneFPV в `ue4ss/Mods/mods.txt`, журналы `UE4SS.log`, `input-bridge-error.log`, `bridge-start-error.log`. Окно помощника само по себе не доказывает загрузку Lua.
+- **Нет пульта/неверные оси:** используйте USB-порт и кабель передачи данных, выберите Joystick/HID на пульте, нужное устройство в меню и выполните калибровку. Физическое и виртуальное устройства могут отображаться отдельно.
+- **FPV не включается:** проверьте нейтраль газа, свежие данные пульта и закрытие меню.
+- **Пропала тяга:** проверьте батарею и симуляцию сигнала. Разряженную батарею заменяет новый полёт.
+- **Проблема сканера:** уточните, исчезают сами модели NPC или только отметки, режим видения и основной/альтернативный FPV. Приложите `UE4SS.log` и `performance.txt`; журнал показывает активный способ отрисовки сканера.
+- **На снимке нет внешнего OSD:** попробуйте **Win + Print Screen**. Выделение области забирает фокус, поэтому внешний интерфейс скрывается/приостанавливается.
+- **Пролёты сквозь объекты/дальняя геометрия:** основной FPV переносит центр симуляции за дроном, альтернативный оставляет его на старте. Дайте миру прогрузиться; повышение дальности увеличивает нагрузку и не гарантирует отсутствующую коллизию.
+- **Чёрный эффект у ЧАЭС/квестовая погода:** отдельные известные ограничения; исправление взрыва камикадзе не заявляется как их устранение.
+- **Потеря кнопки меню:** при закрытой игре удалите только `bindings.txt` из папки ZoneFPV для возврата F6/F8/F9.
 
-Для отчёта нужны версии мода/игры/UE4SS, устройство/интерфейс, режимы, множитель подгрузки, другие моды, шаги и журнал/видео.
+Для отчёта укажите версии игры/UE4SS/ZoneFPV, устройство/интерфейс, основной/альтернативный и Acro/Angle/3D, подгрузку, другие моды, шаги воспроизведения и журналы/видео. RC2 остаётся кандидатом в релиз.

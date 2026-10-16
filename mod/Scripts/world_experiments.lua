@@ -145,6 +145,10 @@ local function empty(g)
     g.markers={};g.anomalyInterference=0;g.anomalyDamageRate=0;g.artifactDistance=-1
     g.artifactReady=false;g.nearestArtifact=nil
 end
+local function releasePending(g,e)
+    local key=e and e.pendingAddress
+    if key and g.pendingByAddress[key]==e then g.pendingByAddress[key]=nil end
+end
 -- Human binoculars use these bones in ObjBinocularsParamsPrototypes. Engine
 -- skeleton queries do not dereference Obj's streamed-out gameplay core.
 local boneNames={'jnt_head','jnt_spine_03','jnt_r_foot','jnt_l_foot','jnt_r_hand','jnt_l_hand'}
@@ -237,10 +241,10 @@ function M.new(system,log,root)
     function api:begin(s,opts)
         if s.worldExperiments then return s.worldExperiments end
         local g={world=s.world,buckets={},cells={},nextRead=0,group=0,logged={},elapsed=0,active=false,frame=0,
-            queues={},queued=0,entries={},byAddress={},refresh=0,initial={},fallback={},performance={}}
+            queues={},queued=0,entries={},byAddress={},pendingByAddress={},refresh=0,initial={},fallback={},performance={}}
         g.scannerDiagnostics={observed=0,cached=0,actorRejected=0,meshPending=0,positionPending=0,deadRejected=0,
             live=0,hidden=0,suspended=0,retired=0,retiredActor=0,retiredIdentity=0,retiredWorld=0,retiredDead=0,
-            readyInRange=0,selectedNPC=0,droppedByLimit=0,deferredNPC=0}
+            readyInRange=0,selectedNPC=0,droppedByLimit=0,deferredNPC=0,agentLookups=0,reconciliations=0}
         for _,group in ipairs(groups)do g.queues[group.class]={items={},head=1,tail=0}end
         empty(g);s.worldExperiments=g
         return g
@@ -255,13 +259,16 @@ function M.new(system,log,root)
                     local q=g.queues[other.class]
                     if other.type~=3 then
                         if q.head<=q.tail then
+                            releasePending(g,q.items[q.head])
                             q.items[q.head]=nil;q.head=q.head+1;g.queued=g.queued-1;break
                         elseif q.deferred then
+                            releasePending(g,q.deferred[q.deferredHead])
                             q.deferred[q.deferredHead]=nil;q.deferredHead=q.deferredHead+1;g.queued=g.queued-1
                             g.scannerDiagnostics.deferredNPC=g.scannerDiagnostics.deferredNPC-1
                             if q.deferredHead>q.deferredTail then q.deferred=nil end
                             break
                         elseif q.retries then
+                            releasePending(g,q.retries[q.retryHead])
                             q.retries[q.retryHead]=nil;q.retryHead=q.retryHead+1;g.queued=g.queued-1
                             if q.retryHead>q.retryTail then q.retries=nil end
                             break
@@ -347,14 +354,23 @@ function M.new(system,log,root)
                 self.notifications[group.class]=ok
             end
         end
-        -- Initial lookups are spread over frames, then notifications handle
-        -- streaming. Slow fallback is used only without construction support.
+        -- Construction notifications do not fire when A-Life reuses an
+        -- existing pooled actor. Reconcile characters sparsely, including
+        -- when notifications work, so discarded corpses/retired instances can
+        -- later establish a fresh live identity. Other groups keep their slow
+        -- no-notification fallback. Never restart an undrained initial array.
         for _=1,#groups do
             g.group=g.group%#groups+1
             local group=groups[g.group]
-            if group.enabled(opts) and (not g.initial[group.class]
-                or not self.notifications[group.class] and now>=(g.fallback[group.class] or 0))then
-                g.initial[group.class]=true;g.fallback[group.class]=now+30
+            local q=g.queues[group.class]
+            if group.enabled(opts) and not q.initial and (not g.initial[group.class]
+                or (group.type==1 or not self.notifications[group.class]) and now>=(g.fallback[group.class] or 0))then
+                if group.type==1 then
+                    local d=g.scannerDiagnostics
+                    d.agentLookups=d.agentLookups+1
+                    if g.initial[group.class]then d.reconciliations=d.reconciliations+1 end
+                end
+                g.initial[group.class]=true;g.fallback[group.class]=now+(group.type==1 and 2 or 30)
                 local started=self.clock()
                 local ok,list=pcall(FindAllOf,group.class)
                 performance.lookupMs=(self.clock()-started)*1000
@@ -362,7 +378,6 @@ function M.new(system,log,root)
                     -- Keep the returned array and consume it in bounded slices.
                     -- New-object notifications have a separate queue and never
                     -- wait behind this initial loaded-world backlog.
-                    local q=g.queues[group.class]
                     q.initial=list;q.cursor=1;q.limit=math.min(#list,8192)
                 elseif not ok then self:once(g,'lookup-'..group.class,'lookup unavailable for '..group.class)end
                 break
@@ -436,6 +451,7 @@ function M.new(system,log,root)
             if not e.pendingWorld then
                 local world=call(e.actor,'GetWorld');if valid(world)then e.pendingWorld=world end
             end
+            if e.pendingAddress then g.pendingByAddress[e.pendingAddress]=e end
             local q=g.queues[e.group.class]
             if e.slowPending then
                 if not q.deferred then q.deferred={};q.deferredHead=1;q.deferredTail=0 end
@@ -459,6 +475,18 @@ function M.new(system,log,root)
         end
         local function observe(e)
             local a,group=e.actor,e.group
+            releasePending(g,e)
+            -- Repeated reconciliations may contain the same still-loading
+            -- actor. Its existing retry owns readiness checks; do not append
+            -- another long-lived retry every two seconds. A changed identity
+            -- or world is a fresh candidate, never adopted by the old retry.
+            local waiting=g.pendingByAddress[call(a,'GetAddress')]
+            if waiting and waiting~=e and liveActor(waiting.actor)
+                and waiting.pendingAddress==call(waiting.actor,'GetAddress')
+                and identityMatches(waiting.actor,waiting.pendingName)
+                and identityMatches(a,waiting.pendingName)
+                and (not waiting.pendingWorld or same(call(a,'GetWorld'),waiting.pendingWorld)
+                    and same(call(waiting.actor,'GetWorld'),waiting.pendingWorld))then return end
             local diagnostic=group.type==1 and g.scannerDiagnostics
             if diagnostic then diagnostic.observed=diagnostic.observed+1 end
             e.attemptFrame=g.frame
@@ -644,7 +672,7 @@ function M.new(system,log,root)
         if not finite(now)then now=g.elapsed end
         if not active(opts) or not valid(s.world)then
             if g.active then
-                empty(g);g.entries={};g.byAddress={};g.buckets={};g.cells={};g.initial={};g.queues={}
+                empty(g);g.entries={};g.byAddress={};g.pendingByAddress={};g.buckets={};g.cells={};g.initial={};g.queues={}
                 local d=g.scannerDiagnostics
                 d.live,d.hidden,d.suspended,d.readyInRange,d.selectedNPC,d.droppedByLimit,d.deferredNPC=0,0,0,0,0,0,0
                 for _,group in ipairs(groups)do g.queues[group.class]={items={},head=1,tail=0}end
@@ -660,9 +688,9 @@ function M.new(system,log,root)
         -- Fast movement and new streamed objects rebuild the nearby view in
         -- this frame, independently of stationary marker housekeeping.
         local function pruneMarkers()
-            -- The writer tests camera visibility before native validation.
             -- Keep the bounded candidate pool cheap here; cached lifecycle
-            -- changes prune immediately and publication checks live identity.
+            -- changes prune immediately. The writer checks live identity and
+            -- actor position before camera culling and detailed geometry.
             local selected=0
             for i=#g.markers,1,-1 do
                 local marker=g.markers[i];local entry=marker.entry

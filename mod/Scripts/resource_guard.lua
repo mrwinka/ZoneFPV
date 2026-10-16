@@ -33,6 +33,49 @@ end
 function M.new(root,log,loader)
     loader=loader or (package and package.loadlib)
     local g={next=0,lastSeq=0,level=0}
+    local statusPath=root..'native-resources-status.txt'
+    function g:close()
+        local file=self.resourceFile;self.resourceFile=nil
+        if file then pcall(function()file:close()end)end
+    end
+    local function readStatus(self)
+        -- Old DLLs replace the status path atomically. Their readers must
+        -- reopen every sample; a retained handle would follow the old inode.
+        if not self.persistentIO then
+            local ok,file=pcall(io.open,statusPath,'r')
+            if not ok or not file then return end
+            local readOK,text=pcall(function()return file:read(161)end)
+            pcall(function()file:close()end)
+            local sample=readOK and M.parse(text)
+            if sample and sample.seq>self.lastSeq then return sample end
+            return
+        end
+        -- The capability export proves the DLL writes synchronously through
+        -- one stable file. No CRT read-ahead may outlive a native publication.
+        -- A failed/stale read drops that handle and gets one bounded retry,
+        -- recovering replacements without ever renewing an old sample.
+        for _=1,2 do
+            local file=self.resourceFile
+            if not file then
+                local ok,value=pcall(io.open,statusPath,'rb')
+                if ok then file=value end
+                if file then
+                    self.resourceFile=file
+                    local buffered,accepted=pcall(function()return file:setvbuf('no')end)
+                    if not buffered or not accepted then self:close();file=nil end
+                end
+            end
+            if file then
+                local sought,offset=pcall(function()return file:seek('set',0)end)
+                if sought and offset==0 then
+                    local readOK,text=pcall(function()return file:read(161)end)
+                    local sample=readOK and M.parse(text)
+                    if sample and sample.seq>self.lastSeq then return sample end
+                end
+                self:close()
+            end
+        end
+    end
     function g:update(now,active)
         if now<self.next then return self.level,self.sample end
         self.next=now+(active and .1 or .5)
@@ -41,13 +84,16 @@ function M.new(root,log,loader)
             if type(loader)=='function' then
                 local ok,poll=pcall(loader,root..'ZoneFPVNative.dll','zonefpv_resources_poll')
                 if ok then self.poll=poll end
+                if type(self.poll)=='function'then
+                    local available,capability=pcall(loader,root..'ZoneFPVNative.dll','zonefpv_resources_persistent_io')
+                    self.persistentIO=available and type(capability)=='function'or false
+                end
             end
             if type(self.poll)~='function' then self.poll=nil end
         end
-        if not self.poll or not pcall(self.poll) then return self.level,self.sample end
-        local f=io.open(root..'native-resources-status.txt','r');if not f then return self.level,self.sample end
-        local sample=M.parse(f:read(161));f:close()
-        if not sample or sample.seq<=self.lastSeq then return self.level,self.sample end
+        if not self.poll or not pcall(self.poll) then self:close();return self.level,self.sample end
+        local sample=readStatus(self)
+        if not sample then return self.level,self.sample end
         self.lastSeq=sample.seq;self.sample=sample
         if M.streamingLimited(sample) then self.streamingLimited=true
         elseif self.streamingLimited~=true or sample.commit>=3072 and sample.used<sample.maximum*.75 then

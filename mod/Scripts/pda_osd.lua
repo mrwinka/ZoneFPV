@@ -1,17 +1,17 @@
 -- Pure PDA adapter for the same versioned layout used by src/osd.h.
 -- Reads/repaints never save. Edits reread the latest file, change one field and
 -- publish a verified temporary file with rollback on Windows rename failures.
-local M={version=7,itemCount=14,pollInterval=.25,maxBytes=4096}
+local M={version=8,itemCount=15,pollInterval=.25,maxBytes=4096}
 M.fonts={'Consolas','Betaflight','Cascadia Mono','Courier New','Lucida Console','Segoe UI','Arial','Bahnschrift'}
 M.styles={'Крест','Точка','Раздельный крест','Кольцо','Кольцо с точкой','Уголки'}
 M.colorNames={'Белый','Зелёный','Жёлтый','Голубой','Красный'}
 local rgb={{255,255,255},{80,255,110},{255,220,60},{60,225,255},{255,110,110}}
 local labels={'Скорость','Высота от старта','Расстояние до старта','Горизонт','Прицел','Время полёта',
-    'Курс','Направление к старту','Газ','Вертикальная скорость','RSSI','Здоровье дрона','Детектор артефактов','Запас гранат'}
+    'Курс','Направление к старту','Газ','Вертикальная скорость','RSSI','Здоровье дрона','Детектор артефактов','Запас гранат','Батарея дрона'}
 local defaults={{.14,.80,24,0,true},{.82,.80,24,0,true},{.82,.86,24,0,true},{.50,.50,24,0,true},
     {.50,.50,24,0,true},{.14,.86,24,0,true},{.50,.12,24,0,true},{.50,.21,24,0,true},
     {.14,.73,24,0,false},{.82,.73,24,0,false},{.14,.66,24,0,true},{.90,.09,14,0,true},
-    {.90,.14,14,3,true},{.90,.19,14,2,true}}
+    {.90,.14,14,3,true},{.90,.19,14,2,true},{.22,.59,14,0,true}}
 local function copy(value)
     if type(value)~='table'then return value end
     local out={};for k,v in pairs(value)do out[k]=copy(v)end;return out
@@ -29,7 +29,7 @@ local function defaultItems()
     return out
 end
 function M.defaults()
-    return {version=7,enabled=true,crossStyle=0,fontChoice=0,downCrossStyle=4,downCrossVisible=true,items=defaultItems()}
+    return {version=M.version,enabled=true,crossStyle=0,fontChoice=0,downCrossStyle=4,downCrossVisible=true,items=defaultItems()}
 end
 local function decimal(token)
     if type(token)~='string'or #token>40 then return end
@@ -46,8 +46,8 @@ local function integer(token)
 end
 function M.parse(text)
     if type(text)~='string'or #text>M.maxBytes then return nil,'invalid_size' end
-    local tokens={};for token in text:gmatch('%S+')do tokens[#tokens+1]=token;if #tokens>76 then return nil,'extra_fields'end end
-    local v=integer(tokens[1]);if not bounded(v,1,7,true)then return nil,'invalid_version'end
+    local tokens={};for token in text:gmatch('%S+')do tokens[#tokens+1]=token;if #tokens>81 then return nil,'extra_fields'end end
+    local v=integer(tokens[1]);if not bounded(v,1,M.version,true)then return nil,'invalid_version'end
     local result=M.defaults();local on,style=integer(tokens[2]),integer(tokens[3])
     if not bounded(on,0,1,true)or not bounded(style,0,v>=6 and 5 or 2,true)then return nil,'invalid_header'end
     result.enabled,result.crossStyle=on==1,style
@@ -65,7 +65,7 @@ function M.parse(text)
         if not bounded(visible,0,1,true)then return nil,'invalid_down_visibility'end
         result.downCrossVisible=visible==1
     end
-    local count=v>=5 and 14 or v==4 and 13 or v==3 and 11 or 10
+    local count=v>=8 and M.itemCount or v>=5 and 14 or v==4 and 13 or v==3 and 11 or 10
     if #tokens~=index-1+count*5 then return nil,'invalid_item_count'end
     for i=1,count do
         local x,y,size,color,visible=decimal(tokens[index]),decimal(tokens[index+1]),integer(tokens[index+2]),integer(tokens[index+3]),integer(tokens[index+4])
@@ -79,8 +79,8 @@ end
 local function valid(config)
     if type(config)~='table'or type(config.enabled)~='boolean'or type(config.downCrossVisible)~='boolean'
         or not bounded(config.crossStyle,0,5,true)or not bounded(config.downCrossStyle,0,5,true)
-        or not bounded(config.fontChoice,0,7,true)or type(config.items)~='table'or #config.items~=14 then return false end
-    for i=1,14 do
+        or not bounded(config.fontChoice,0,7,true)or type(config.items)~='table'or #config.items~=M.itemCount then return false end
+    for i=1,M.itemCount do
         local e=config.items[i]
         if type(e)~='table'or not bounded(e.x,0,1)or not bounded(e.y,0,1)or not bounded(e.size,14,72,true)
             or not bounded(e.color,0,4,true)or type(e.visible)~='boolean'then return false end
@@ -89,14 +89,14 @@ local function valid(config)
 end
 function M.serialize(config)
     if not valid(config)then return nil,'invalid_layout'end
-    local rows={string.format('7 %d %d %d %d %d',config.enabled and 1 or 0,config.crossStyle,config.fontChoice,
+    local rows={string.format('8 %d %d %d %d %d',config.enabled and 1 or 0,config.crossStyle,config.fontChoice,
         config.downCrossStyle,config.downCrossVisible and 1 or 0)}
     -- Seventeen significant digits retain untouched external coordinates.
     for _,e in ipairs(config.items)do rows[#rows+1]=string.format('%.17g %.17g %d %d %d',e.x,e.y,e.size,e.color,e.visible and 1 or 0)end
     return table.concat(rows,'\n')..'\n'
 end
 local sample={'SPD 64 km/h','ALT +25.0 m','HOME 120 m',nil,nil,'02:05','HDG 085',nil,'THR 42%','V/S +2.1 m/s',
-    'RSSI 63%','DRONE HP  86%','DETECTOR 28.9 m','GRENADES 3'}
+    'RSSI 63%','DRONE HP  86%','DETECTOR 28.9 m','GRENADES 3','BAT 85% 23.4V 12A 225mAh'}
 function M.preview(snapshot,width,height)
     snapshot=type(snapshot)=='table'and snapshot or M.defaults()
     width=bounded(width,200,8192)and width or 1600;height=bounded(height,100,8192)and height or 900
@@ -190,7 +190,7 @@ function M.hit(snapshot,x,y,width,height)
     end
 end
 function M.dragPosition(snapshot,id,x,y,offsetX,offsetY)
-    if not valid(snapshot)or not bounded(id,0,13,true)then return end
+    if not valid(snapshot)or not bounded(id,0,M.itemCount-1,true)then return end
     offsetX,offsetY=offsetX or 0,offsetY or 0
     local function finite(value)return bounded(value,-math.huge,math.huge)and value~=math.huge and value~=-math.huge end
     if not(finite(x)and finite(y)and finite(offsetX)and finite(offsetY))then return end
@@ -294,7 +294,7 @@ function M.new(root,opts)
         if action==self then action,args=args,colonArgs end
         if type(action)~='string'or type(args)~='table'then return false,'invalid_action'end
         if action=='selectItem'then
-            if not bounded(args.id,0,13,true)then return false,'invalid_item'end
+            if not bounded(args.id,0,M.itemCount-1,true)then return false,'invalid_item'end
             selected=args.id;return true,'selected'
         elseif action=='previewDown'then
             local value=bool(args.value);if value==nil then return false,'invalid_value'end
@@ -317,17 +317,17 @@ function M.new(root,opts)
             next[action]=value
         elseif action=='item'or itemFields[action]then
             local id=args.id==nil and selected or args.id;local field=action=='item'and args.field or action
-            if not bounded(id,0,13,true)or not itemFields[field]then return false,'invalid_item'end
+            if not bounded(id,0,M.itemCount-1,true)or not itemFields[field]then return false,'invalid_item'end
             local itemSpec=itemFields[field];local value=args.value
             if itemSpec=='bool'then value=bool(value);if value==nil then return false,'invalid_value'end
             elseif not bounded(value,table.unpack(itemSpec))then return false,'invalid_value'end
             next.items[id+1][field]=value
         elseif action=='position'then
             local id=args.id==nil and selected or args.id
-            if not bounded(id,0,13,true)or not bounded(args.x,0,1)or not bounded(args.y,0,1)then return false,'invalid_value'end
+            if not bounded(id,0,M.itemCount-1,true)or not bounded(args.x,0,1)or not bounded(args.y,0,1)then return false,'invalid_value'end
             next.items[id+1].x,next.items[id+1].y=args.x,args.y
         elseif action=='resetItem'then
-            local id=args.id==nil and selected or args.id;if not bounded(id,0,13,true)then return false,'invalid_item'end
+            local id=args.id==nil and selected or args.id;if not bounded(id,0,M.itemCount-1,true)then return false,'invalid_item'end
             next.items[id+1]=defaultItems()[id+1]
         elseif action=='resetLayout'then
             next.items=defaultItems();next.crossStyle,next.downCrossStyle,next.downCrossVisible=0,4,true
@@ -337,7 +337,7 @@ function M.new(root,opts)
         if text==M.serialize(config)and status~='invalid'then return true,'unchanged'end
         local ok,reason=publish(text,observed)
         if not ok then recoveryPending=reason=='rollback_failed';refresh(true);lastError=reason;report('save failed: '..reason);return false,reason end
-        config=next;config.sourceVersion=7;sourceVersion,status,lastError,observed=7,'loaded',nil,text
+        config=next;config.sourceVersion=M.version;sourceVersion,status,lastError,observed=M.version,'loaded',nil,text
         everLoaded,recoveryPending=true,false
         return true,'saved'
     end
@@ -345,14 +345,14 @@ function M.new(root,opts)
 end
 function M.itemList(snapshot,translate)
     local s=valid(snapshot)and snapshot or M.defaults();local tr=translate or function(v)return v end
-    local selected=bounded(s.selectedItemID,0,13,true)and s.selectedItemID or 0
+    local selected=bounded(s.selectedItemID,0,M.itemCount-1,true)and s.selectedItemID or 0
     local items={}
     for i,item in ipairs(s.items)do items[i]={id=i-1,label=tr(item.label),selected=i-1==selected}end
     return items
 end
 function M.rows(snapshot,translate)
     local s=valid(snapshot)and snapshot or M.defaults();local tr=translate or function(v)return v end
-    local selected=bounded(s.selectedItemID,0,13,true)and s.selectedItemID or 0
+    local selected=bounded(s.selectedItemID,0,M.itemCount-1,true)and s.selectedItemID or 0
     local item=s.items[selected+1];local rows={}
     local function command(action,args)return 'osd',{action=action,args=args}end
     local function row(label,value,kind,fn,help)
@@ -380,7 +380,7 @@ function M.rows(snapshot,translate)
     toggle('Показывать OSD',s.enabled,'enabled',nil,'Включает все показатели на экране дрона.')
     choice('Шрифт OSD',s.fontChoice,M.fonts,'fontChoice',nil,'Общий шрифт всех текстовых показателей.')
     row('Элемент OSD',tr(item.label),'status',function()end,
-        'Выберите один из 14 показателей для настройки.')
+        'Выберите показатель для настройки.')
     toggle('Показывать элемент',item.visible,'item',{id=selected,field='visible'},'Видимость выбранного показателя. Нижний прицел настраивается отдельно.')
     slider('Размер элемента',item.size,14,72,1,function(v)return string.format('%d',v)end,'item',{id=selected,field='size'},nil,
         'Размер показателя сохраняется для экрана высотой 900 пикселей и масштабируется с разрешением.')
@@ -393,7 +393,7 @@ function M.rows(snapshot,translate)
     row('Сбросить выбранный элемент',tr('Выполнить'),'action',function()return command('resetItem',{id=selected})end,
         'Возвращает положение, размер, цвет и видимость выбранного показателя.')
     row('Сбросить расположение OSD',tr('Выполнить'),'action',function()return command('resetLayout',{})end,
-        'Возвращает 14 показателей и оба прицела к исходному виду. Шрифт и общий переключатель сохраняются.')
+        'Возвращает показатели и оба прицела к исходному виду. Шрифт и общий переключатель сохраняются.')
     return rows
 end
 return M

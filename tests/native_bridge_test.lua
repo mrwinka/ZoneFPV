@@ -43,13 +43,14 @@ local visualExports={
 }
 local concussionId,concussionCounter,concussionActive,concussionTicks,concussionPolls=0,0,false,0,0
 local concussionOverride
-local expectDual=false
+local expectDual,expectBlast=false,false
 local function concussionReport()
     files['test/native-concussion-status.txt']=concussionOverride or string.format('ZFPVC21 1 %d %d %d 0\n',concussionActive and 1 or 0,concussionId,concussionCounter)
 end
 local concussionExports={
     arm=function()
-        local pattern=expectDual and '^ZFPVC44 (%d+) 300000 400000 11 0 22 0\n$'or '^ZFPVC21 (%d+) 300000 400000 11 0\n$'
+        local pattern=expectBlast and '^ZFPVC70 (%d+) 300000 400000 11 22 31 32 33 34 35\n$'or
+            expectDual and '^ZFPVC44 (%d+) 300000 400000 11 0 22 0\n$'or '^ZFPVC21 (%d+) 300000 400000 11 0\n$'
         concussionId=assert(tonumber(files['test/native-concussion-control.txt']:match(pattern)))
         concussionActive=true;concussionCounter=0;concussionReport()
     end,
@@ -82,6 +83,7 @@ local sourceExports={
 }
 local function loader(path,export)
     assert(path=='test/ZoneFPVNative.dll')
+    if export=='zonefpv_concussion_blast_scope'then return function()return 0 end end
     local sourceName=export:match('^zonefpv_concussion_source_(%a+)$')
     if sourceName then return sourceExports[sourceName]end
     local mode,name=export:match('^zonefpv_(%a+)_(%a+)$')
@@ -160,6 +162,34 @@ assert(not client:concussionArm(world,collection,11,0,nil,0))
 assert(client:concussionDisarm()and not concussionActive)
 expectDual=false
 print('PASS strict dual MPC request uses v44 control marker, distinct bounded names, zero secondary number and original single-request compatibility')
+expectBlast=true
+local extras={31,32,33,34,35}
+local blastArmed,blastReport=client:concussionArm(world,collection,11,0,22,0,extras)
+assert(blastArmed and blastReport.blastScope and concussionActive)
+assert(client:concussionTick(.1)==0)
+oldRequest=files['test/native-concussion-control.txt']
+for _,invalid in ipairs({{31,32,33,34},{31,32,33,34,35,36},{31,32,33,34,11},
+    {31,32,33,34,22},{31,32,33,34,31},{31,32,33,34,0},{31,32,33,34,0xffffffff},
+    {31,32,33,34,4294967327},{31,32,33,34,35.5}})do
+    assert(not client:concussionArm(world,collection,11,0,22,0,invalid))
+    assert(files['test/native-concussion-control.txt']==oldRequest,'invalid7 scope cannot write a partial/legacy request')
+end
+assert(client:concussionDisarm())
+expectBlast=false;expectDual=true
+local legacy=bridge.new('test/',function(path,export)
+    if export=='zonefpv_concussion_blast_scope'then return nil,'old DLL'end
+    return loader(path,export)
+end)
+assert(legacy:concussionArm(world,collection,11,0,22,0))
+oldRequest=files['test/native-concussion-control.txt']
+local legacyToken=legacy.concussionToken
+local unsupported,unsupportedWhy=legacy:concussionArm(world,collection,11,0,22,0,extras)
+assert(not unsupported and unsupportedWhy=='native blast scope unsupported'and legacy.concussionToken==legacyToken and
+    files['test/native-concussion-control.txt']==oldRequest and concussionActive,
+    'missing7 capability preserves existing2 gate and does not falsely acknowledge full scope')
+assert(legacy:concussionTick(.1)==0 and legacy:concussionDisarm())
+expectDual=false
+print('PASS seven-key blast scope uses distinct version/capability, exact5 additional names, preserves native tick/token validation, rejects malformed lists before IO, and old DLL leaves existing dual scope intact without falsely acknowledging7')
 function pawn:GetWorld()return world end
 local sourceClient=bridge.new('test/',loader)
 assert(sourceClient:concussionSourceArm(pawn,world)and sourceActive and not sourceClient.opened,

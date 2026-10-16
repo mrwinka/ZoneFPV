@@ -54,8 +54,29 @@ void checkGrouping(){
     for(const auto box:weatherMenu::actionModeBoxes)assert(pageOf(box)==9);
     std::cout<<"PASS five primary groups and eleven sections, all eight assignments in Buttons, general preferences and removed diagnostic routes\n";
 }
+void checkBattery(){
+    weatherMenu::BatterySettings settings;
+    for(const auto* raw:{"1 1 1500 6","1 0 300 2","1 1 20000 8"}){std::istringstream input(raw);assert(weatherMenu::parseBatterySettings(input,settings));}
+    settings={false,2750,4};
+    for(const auto* raw:{"2 1 1500 6","1 2 1500 6","1 1 299 6","1 1 1525 6","1 1 20050 6",
+        "1 1 1500 1","1 1 1500 9","1 1 1500 6 extra","1 1 01500 6","1 1 1500.0 6","1 1 1e3 6"}){
+        std::istringstream input(raw);assert(!weatherMenu::parseBatterySettings(input,settings)&&!settings.enabled&&settings.capacity==2750&&settings.cells==4);}
+    assert(SendMessageW(weatherMenu::batteryEnabled,BM_GETCHECK,0,0)==BST_CHECKED&&weatherMenu::sliderValue(weatherMenu::batteryCapacity)==1500&&weatherMenu::sliderValue(weatherMenu::batteryCells)==6);
+    assert(SendMessageW(weatherMenu::batteryCapacity,TBM_GETLINESIZE,0,0)==50&&SendMessageW(weatherMenu::batteryCapacity,TBM_GETPAGESIZE,0,0)==500);
+    idle();move(weatherMenu::batteryCapacity,1525,TB_THUMBTRACK);assert(!weatherMenu::pending&&weatherMenu::commands.empty());
+    move(weatherMenu::batteryCapacity,1525,TB_ENDTRACK);assert(command()=="battery 1 1550 6");
+    idle();move(weatherMenu::batteryCells,8,TB_ENDTRACK);assert(command()=="battery 1 1550 8");
+    idle();SendMessageW(weatherMenu::batteryEnabled,BM_SETCHECK,BST_UNCHECKED,0);click(181);assert(command()=="battery 0 1550 8");
+    {std::ofstream file(weatherMenu::root/L"battery-settings.txt");file<<"1 0 2750 4\n";}
+    idle();weatherMenu::refreshPreferences();assert(weatherMenu::batteryCommand()=="battery 0 2750 4"&&!weatherMenu::pending);
+    {std::ofstream file(weatherMenu::root/L"battery-settings.txt");file<<"1 1 1525 6\n";}
+    weatherMenu::refreshPreferences();assert(weatherMenu::batteryCommand()=="battery 1 1500 6");
+    assert(text(weatherMenu::sliderSetting(weatherMenu::batteryCapacity)->badge)==L"1500 mAh"&&text(weatherMenu::sliderSetting(weatherMenu::batteryCells)->badge)==L"6S");
+    for(int lang=1;lang<5;++lang){language::current=lang;for(const auto* label:{L"Симуляция батареи",L"Ёмкость батареи",L"Количество ячеек"})assert(wcscmp(label,language::tr(label))!=0);}language::current=0;
+    std::cout<<"PASS battery Main controls, canonical settings, units, five languages and one atomic command per released edit\n";
+}
 void checkSliders(){
-    assert(weatherMenu::sliders.size()==10);
+    assert(weatherMenu::sliders.size()==12);
     for(const auto& item:weatherMenu::sliders){wchar_t cls[64]{};GetClassNameW(item.handle,cls,64);assert(wcscmp(cls,TRACKBAR_CLASSW)==0);assert(SendMessageW(item.handle,TBM_GETRANGEMIN,0,0)==item.minimum&&SendMessageW(item.handle,TBM_GETRANGEMAX,0,0)==item.maximum);}
     idle();move(weatherMenu::speed,175,TB_THUMBTRACK);assert(!weatherMenu::pending&&weatherMenu::commands.empty());assert(weatherMenu::sliderValue(weatherMenu::speed)==1.75);assert(text(weatherMenu::sliderSetting(weatherMenu::speed)->badge)==L"1.75×");
     move(weatherMenu::speed,175,TB_ENDTRACK);assert(command()=="flight 1.750000 25");idle();move(weatherMenu::speed,175,TB_ENDTRACK);assert(!weatherMenu::pending&&weatherMenu::commands.empty());
@@ -339,7 +360,7 @@ int main(){
     _set_error_mode(_OUT_TO_STDERR);std::cout<<std::unitbuf;const auto fixture=fs::temp_directory_path()/(L"ZoneFPV-menu-test-"+std::to_wstring(GetCurrentProcessId()));fs::create_directories(fixture);weatherMenu::root=fixture;
     assert(!weatherMenu::visible()&&!weatherMenu::modalRequested&&weatherMenu::cursorShows==0);
     weatherMenu::create();const auto h=weatherMenu::window.load();assert(h&&IsWindow(h)&&!IsWindowVisible(h));
-    assert(weatherMenu::experimentCommand()=="experiments 0 0 0 0 0 0 0 0 0");checkGrouping();checkSliders();checkPreferences();checkBindings();checkArmament();checkVisionLanguages();
+    assert(weatherMenu::experimentCommand()=="experiments 0 0 0 0 0 0 0 0 0");checkGrouping();checkBattery();checkSliders();checkPreferences();checkBindings();checkArmament();checkVisionLanguages();
     const auto original=geometry();const auto font=controlFont(weatherMenu::status);const HWND combos[]={weatherMenu::modeBox,weatherMenu::deviceBox,weatherMenu::profileBox,weatherMenu::languageBox,weatherMenu::visionModeBox};
     for(const auto size:{SIZE{560,560},SIZE{1000,900},SIZE{700,700}}){resize(size.cx,size.cy);checkPages();for(const auto combo:combos){if(SendMessageW(combo,CB_GETCOUNT,0,0)<2){SendMessageW(combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"Fixture A"));SendMessageW(combo,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"Fixture B"));}checkDropdown(combo);}}
     const auto restored=geometry();assert(restored.size()==original.size());for(size_t i=0;i<original.size();++i)assert(EqualRect(&restored[i],&original[i]));assert(controlFont(weatherMenu::status).lfHeight==font.lfHeight);

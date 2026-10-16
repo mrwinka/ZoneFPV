@@ -1,5 +1,5 @@
 -- Adapter contract, not proof of layout or game compatibility.
-local M=dofile('mod/Scripts/pda_menu.lua')
+local M=dofile(arg[1] or 'mod/Scripts/pda_menu.lua')
 local serial,created,callback=0,0
 local world,pc,view,manager,hint,subsystem
 local objects,classes,logs,commands,injections={}, {}, {}, {}, {}
@@ -7,6 +7,7 @@ local failFont=false
 local ownershipReads,globalSearches=0,0
 local nativeSeed,blueprintSeed=true,false
 local missingEnhanced=false
+local enumPDA,enumUpgrade,enumAvailable,enumColonOnly,enumReads=11,16,true,false,0
 local missingUMG,existingWidgets={},{}
 local snapshot
 local pointer={X=0,Y=0}
@@ -16,6 +17,7 @@ function methods:GetAddress()return self.id end
 function methods:IsAnyClass()return self.className~=nil end
 function methods:GetFullName()return self.fullNameOverride or (self.className and 'Class '..self.className or self.kind)end
 function methods:GetClass()return self.class end
+function methods:GetSuperStruct()return self.super end
 function methods:GetWorld()return self.world or world end
 function methods:GetOwningPlayer()ownershipReads=ownershipReads+1;if not self.ownerPending then return pc end end
 function methods:GetOwningLocalPlayer()return nil end
@@ -162,6 +164,19 @@ function methods:InjectInputForAction(action,value,modifiers,triggers)
 end
 FText=function(v)return v end;FName=function(v)return v end
 StaticFindObject=function(path)
+    if path=='/Script/Stalker2.EWidgetNameEx'or path=='/Script/Stalker2:EWidgetNameEx'then
+        enumReads=enumReads+1
+        if not enumAvailable or enumColonOnly and path=='/Script/Stalker2.EWidgetNameEx'then return nil end
+        classes[path]=classes[path]or obj('EWidgetNameEx')
+        classes[path].ForEachName=function(self,visit)
+            assert(self==classes[path],'Reflected enum iteration retains its UObject receiver')
+            for name,value in pairs({MainMenu=0,PDA=enumPDA,Upgrade=enumUpgrade})do
+                -- Shipping UE4SS supplies FName wrappers, not Lua strings.
+                visit({ToString=function()return 'EWidgetNameEx::'..name end},value)
+            end
+        end
+        return classes[path]
+    end
     if missingEnhanced and path=='/Script/EnhancedInput.EnhancedInputLocalPlayerSubsystem'then return nil end
     if missingUMG[path]then return nil end
     classes[path]=classes[path]or obj(path)
@@ -185,7 +200,8 @@ FindAllOf=function(name)
     return existingWidgets[name]or {}
 end
 local function setup(navigationKeys)
-    world=obj('World');pc=obj('PC');view=obj('PDA');view.WidgetName=11;view.viewport=true;view.Container=obj('Overlay');view.Switcher=obj('Switcher');view.WidgetTree=obj('Tree')
+    world=obj('World');pc=obj('PC');view=obj('PDA');view.WidgetName=enumPDA;view.viewport=true;view.Container=obj('Overlay');view.Switcher=obj('Switcher');view.WidgetTree=obj('Tree')
+    view.class=obj('W_PDABookView_C');view.class.className='/Game/GameLite/FPS_Game/UIRemaster/PDA/W_PDABookView.W_PDABookView_C'
     manager=obj('Manager');manager.OpenViews={view};hint=obj('Hint')
     view.NavigationPanel=obj('Navigation');view.NavigationPanel.SlotContainer=obj('Tabs');view.NavigationPanel.PDASectionSwitch=0
     local tab=nativeTabFixture();view.NavigationPanel.SlotContainer.children={tab}
@@ -206,6 +222,30 @@ local function setup(navigationKeys)
 end
 local menu=setup()
 assert(menu:update(1,pc)==true and created>0)
+assert(menu.theme.colors.page.R<.01 and menu.theme.colors.page.R>menu.theme.colors.page.G and menu.theme.colors.page.G>menu.theme.colors.page.B,'Field instrument matches native reddish charcoal instead of olive black')
+assert(menu.title.widget.color.SpecifiedColor.R==menu.theme.colors.heading.R and menu.sidebarTitle.widget.color.SpecifiedColor.G==menu.theme.colors.heading.G,'Native heading cream is applied without changing title font or placement')
+local footerCount=0
+for _,widget in ipairs(objects)do
+    local a=widget.Slot and widget.Slot.anchors
+    if widget.outer==menu.pageHost.tree and a and a.Minimum.X==0 and a.Minimum.Y==.917 and a.Maximum.X==1 then
+        footerCount=footerCount+1
+        assert(widget.color==menu.theme.colors.footer and widget.color.A==1,'Footer uses the native opaque warm charcoal instead of tinting the page texture')
+    end
+end
+assert(footerCount==1,'Shade matching retains one footer at its established position')
+assert(menu.rowWidgets[1].caption.widget.color.SpecifiedColor.R==menu.theme.colors.text.R
+    and menu.rowWidgets[1].value.widget.color.SpecifiedColor.G==menu.theme.colors.amber.G,'Cream captions and amber values are applied directly to owned labels')
+assert(menu.rowWidgets[1].activate.widget.color.R==1 and menu.rowWidgets[1].activate.widget.color.G==1,'Parent button modulation cannot dim the styled child value')
+assert(menu.rowWidgets[1].background.color==menu.theme.colors.rowActive and menu.rowWidgets[1].rule.color==menu.theme.colors.ruleActive)
+assert(menu.rowWidgets[1].edge:GetVisibility()==3 and menu.rowWidgets[2].edge:GetVisibility()==2,'Only the selected row shows its decorative amber edge')
+for _,edge in ipairs(menu.surfaceFrame)do assert(edge:GetVisibility()==3,'Instrument frame never intercepts menu input')end
+for _,row in ipairs(menu.rowWidgets)do assert(row.rule:GetVisibility()==3,'Row rules never intercept slider/click input')end
+assert(menu.sectionTabs[1].background.color==menu.theme.colors.tabActive and menu.sectionTabs[1].background:GetVisibility()==3)
+assert(menu.sectionTabs[1].text.widget.color.SpecifiedColor==menu.theme.colors.tabText and menu.sectionTabs[2].background:GetVisibility()==1)
+assert(menu.description.widget.Font.Size==13 and menu.description.widget.color.SpecifiedColor.R==menu.theme.colors.muted.R,'Description is restrained prose rather than a large bold control label')
+local sectionSlot=menu.sectionTabs[1].widget.Slot.anchors
+assert(sectionSlot.Minimum.X==.272 and sectionSlot.Minimum.Y==.115 and sectionSlot.Maximum.X==.272+.226,'Subtab layout remains unchanged by its decorative backing')
+assert(menu.scroll.Slot.anchors.Minimum.X==.272 and menu.scroll.Slot.anchors.Minimum.Y==.25,'Existing content column and vertical scroll position remain unchanged')
 local initial=created
 assert(menu.pageHost.widget.parent==view.Switcher and menu.pageHost.tree.RootWidget==menu.root,
  'Content must be an initialized native page in the actual Switcher')
@@ -271,6 +311,110 @@ menu:destroy()
 blueprintSeed=true;menu=setup();manager.OpenViews={}
 assert(menu:update(82,pc)and created>0,'Exact cooked Blueprint class is a supported seed')
 menu:destroy()
+-- A technician/other BookView can have the same reflected child bindings and
+-- an obsolete enum ordinal. It must never receive our native page or tab.
+nativeSeed=false;blueprintSeed=false
+menu=setup();view.class=obj('UpgradeView');view.class.className='/Script/Stalker2.UpgradeView'
+assert(not menu:update(82.1,pc)and created==0,'WidgetName=11 cannot identify an unrelated native book as the PDA')
+callback(view);assert(not menu:update(82.2,pc)and created==0,'A stale construction callback must also prove the actual PDA class')
+menu:destroy()
+nativeSeed=true
+menu=setup();view.viewport=false
+local upgrade=obj('Upgrade');upgrade.WidgetName=11;upgrade.class=obj('UpgradeView');upgrade.class.className='/Script/Stalker2.UpgradeView'
+upgrade.viewport=true;upgrade.Container=obj('Overlay');upgrade.Switcher=obj('Switcher');upgrade.NavigationPanel=obj('Navigation')
+manager.OpenViews={upgrade}
+assert(not menu:update(82.25,pc)and created==0,'A closed cached PDA must not be extended while the technician screen is open')
+menu:destroy()
+menu=setup();view.class=obj('UpgradeView');view.class.className='/Script/Stalker2.UpgradeView'
+assert(not menu:update(82.3,pc)and created==0,'FindAllOf seeds must not bypass actual class validation')
+menu:destroy()
+menu=setup();view.class=obj('PDAView');view.class.className='/Script/Other.PDAView'
+assert(not menu:update(82.35,pc)and created==0,'A matching short class name from another package is not proof of PDA identity')
+menu:destroy()
+menu=setup();view.class=obj('PDAView');view.class.className='/Script/Stalker2:PDAView';view.class.fullNameOverride='Object /Script/Stalker2:PDAView'
+assert(menu:update(82.36,pc)and created>0,'Installed UE4SS Object/colon spelling identifies the exact native PDA class')
+menu:destroy()
+nativeSeed=false;blueprintSeed=false
+menu=setup();view.class.className='/Game/GameLite/FPS_Game/UIRemaster/PDA/W_PDABookView:W_PDABookView_C'
+view.class.fullNameOverride='Object '..view.class.className
+assert(menu:update(82.37,pc)and created>0,'Manager-hosted cooked PDA in installed Object/colon format must attach without class seeds or callbacks')
+assert(table.concat(logs,'\n'):find('Exact PDA host accepted: class='..view.class.className,1,true),'The accepted concrete runtime class is recorded')
+menu:destroy()
+menu=setup();view.class.className='/Game/GameLite/FPS_Game/UIRemaster/PDA/W_PDABookView:W_PDABookView_C'
+view.class.fullNameOverride='Object '..view.class.className;view.WidgetName=enumUpgrade
+assert(not menu:update(82.38,pc)and created==0,'Recognizing the cooked colon class must not authorize the technician context')
+menu:destroy()
+menu=setup();view.class.className='/Game/Other/W_PDABookView:W_PDABookView_C'
+assert(not menu:update(82.39,pc)and created==0,'A copied short cooked class name in another package is not an authorized PDA')
+menu:destroy()
+menu=setup();manager.OpenViews={}
+for i=1,20 do
+    local book=obj('OtherBook');book.WidgetName=enumPDA;book.class=obj('OtherBookClass')
+    book.class.className='/Game/Other/Book'..i..':Book_C';book.Container=obj('Overlay');book.Switcher=obj('Switcher');book.NavigationPanel=obj('Navigation')
+    manager.OpenViews[#manager.OpenViews+1]=book
+end
+local diagnosticStart=#logs
+assert(not menu:update(82.391,pc)and created==0)
+local exclusions=0
+for i=diagnosticStart+1,#logs do if logs[i]:find('Native book excluded:',1,true)then exclusions=exclusions+1 end end
+assert(exclusions==12,'Rejected live native books have a bounded twelve-class diagnostic')
+local diagnosticEnd=#logs
+for i=1,20 do menu:update(82.391+i*.1,pc)end
+assert(#logs==diagnosticEnd,'Rejected-book diagnostics must not repeat during normal polling')
+menu:destroy();nativeSeed=true
+menu=setup();view.WidgetName=enumUpgrade
+assert(not menu:update(82.4,pc)and created==0,'The technician context must be rejected even when it reuses the supported PDA class')
+menu:destroy()
+menu=setup();local actualPDAClass=obj('PDAView');actualPDAClass.className='/Script/Stalker2.PDAView'
+view.class=obj('UpgradeBook');view.class.className='/Game/Other/Upgrade.W_UpgradeBook_C';view.class.super=actualPDAClass
+assert(not menu:update(82.5,pc)and created==0,'Another book cannot inherit permission to extend the PDA from a shared native class')
+menu:destroy()
+-- A shipping update may shift both ordinals. Read the live enum by name and
+-- keep the exact-class and technician-context barriers at the shifted values.
+enumPDA,enumUpgrade,enumColonOnly=12,17,true
+menu=setup();view.class=obj('PDAView');view.class.className='/Script/Stalker2:PDAView'
+view.class.fullNameOverride='Object /Script/Stalker2:PDAView'
+assert(menu:update(82.51,pc)and created>0,'Live PDA=12 from the colon enum path accepts the exact native colon PDA class')
+local successfulEnumReads=enumReads
+menu:update(82.71,pc)
+assert(enumReads==successfulEnumReads,'Successful enum resolution is cached instead of iterated on every update')
+menu:destroy()
+menu=setup();view.WidgetName=enumUpgrade
+assert(not menu:update(82.52,pc)and created==0,'Live Upgrade=17 remains excluded even when the technician reuses the exact PDA class')
+menu:destroy()
+enumAvailable=false
+menu=setup();local beforeEnumReads=enumReads
+assert(not menu:update(82.53,pc)and created==0,'An unavailable live enum fails closed without constructing or changing native menus')
+assert(enumReads==beforeEnumReads+2,'Only the two known native enum paths are probed')
+assert(table.concat(logs,'\n'):find('PDA extension paused: live EWidgetNameEx.PDA unavailable',1,true),'Missing enum gives an actionable PDA diagnostic')
+for i=1,40 do menu:update(82.53+i*.1,pc)end
+assert(enumReads==beforeEnumReads+2,'Missing enum retries are bounded to five seconds')
+enumAvailable=true
+assert(menu:update(87.54,pc)and created>0,'A loaded-later live enum recovers the PDA after the bounded retry')
+menu:destroy()
+enumPDA,enumUpgrade,enumColonOnly=11,16,false
+-- A native screen can be replaced while its cached UObject wrapper/address
+-- still reports valid. Do not navigate or remove any old cached controls.
+for _,changed in ipairs({'class','WidgetTree','Container','Switcher','NavigationPanel','SlotContainer'})do
+    menu=setup();assert(menu:update(82.6,pc));assert(menu:requestOpen(82.6,pc))
+    local oldTab,oldPage,oldRoot=menu.tab.widget,menu.pageHost.widget,menu.root
+    local oldNavigation=view.NavigationPanel;local previousClick=oldNavigation.directClick
+    local staleInputCalls=0
+    menu.inject={releaseAt=82.605,mimic={IsValid=function()staleInputCalls=staleInputCalls+1;return true end,
+        OnMouseButtonReleased=function()staleInputCalls=staleInputCalls+1 end}}
+    if changed=='class'then
+        view.class=obj('UpgradeView');view.class.className='/Script/Stalker2.UpgradeView'
+    elseif changed=='SlotContainer'then oldNavigation.SlotContainer=obj('ReplacementTabs')
+    else view[changed]=obj('Replacement'..changed)end
+    -- Keep the native screen open. Abandoned widgets can still be present in
+    -- an old native container, so rebuilding this host could duplicate them.
+    local before=created;menu:update(82.61,pc)
+    assert(menu.root==nil and not menu.active and created==before,'Replaced '..changed..' must abandon the attached host immediately')
+    assert(not oldTab.removed and not oldPage.removed and not oldRoot.removed and oldNavigation.directClick==previousClick,
+        'Stale '..changed..' cleanup must not write to cached native UI or controls')
+    assert(staleInputCalls==0 and not menu.inject,'Abandon must cancel a pending input release without touching a stale hint')
+    menu:destroy()
+end
 nativeSeed=true;blueprintSeed=false;menu=setup()
 snapshot.resources={ram=953,commit=7853,known=true,used=364035,maximum=720896};snapshot.resourceLevel=0
 menu:update(83,pc);menu:requestOpen(83,pc)
@@ -278,7 +422,7 @@ assert(menu.resources.lastText:find('Память: нормально',1,true),'
 snapshot.resourceLevel=nil;menu:update(84,pc)
 assert(menu.resources.lastText:find('Память: нормально',1,true),'Compatibility footer also uses commit headroom')
 menu:destroy()
-menu=setup();view.viewport=false;manager.OpenViews={};missingEnhanced=true
+menu=setup();menu:update(84.5,pc);view.viewport=false;manager.OpenViews={};missingEnhanced=true
 local mimic=hint.OpenPDA.MimicButtonElement
 mimic.OnMouseButtonPressed=function(self)self.injectHeld=true end
 mimic.OnMouseButtonReleased=function(self)self.injectHeld=false end
@@ -386,6 +530,13 @@ category.widget.pressed=false;menu:update(150.01,pc)
 assert(menu.page==3 and menu.title.lastText==menu.pages[3].label and menu.active,
  'Each category updates information inside the same selected PDA page')
 assert(category.background.color==menu.theme.colors.rowActive,'Selected fill takes precedence over hover')
+local activeSubtab,inactiveSubtab=menu.sectionTabs[1],menu.sectionTabs[2]
+activeSubtab.widget.hovered=true;menu:update(150.02,pc)
+assert(activeSubtab.background.color==menu.theme.colors.tabActive and activeSubtab.underline.color.A==0,
+ 'Selected subsection keeps its cream backing and clean rounded edge when hovered')
+inactiveSubtab.widget.hovered=true;menu:update(150.03,pc)
+assert(inactiveSubtab.background.color==menu.theme.colors.hover,'Unselected subsection uses the same restrained hover feedback')
+activeSubtab.widget.hovered=false;inactiveSubtab.widget.hovered=false
 view.NavigationPanel:ClickMenuButton('Native6');menu:update(150.1,pc)
 assert(not menu.active and view.Switcher:GetActiveWidgetIndex()==5 and view.Switcher:GetVisibility()==0,
  'Native selection must leave the owned page through the real switcher')
@@ -826,7 +977,7 @@ pc.keys={PageUp=true};menu:update(222.44,pc)
 assert(menu.row==8 and menu.scroll.scrolledWidget==menu.rowWidgets[8].root)
 -- Complete OSD controls, item positions and independent styles are local.
 chooseSection(2,2);assert(contexts[#contexts][2]==3 and menu.preview:GetVisibility()==4)
-assert(menu.osdItemTitle.lastText=='Показатели'and #menu.osdItemButtons==14
+assert(menu.osdItemTitle.lastText=='Показатели'and #menu.osdItemButtons==15
  and menu.osdItemScroll.orientation==1 and menu.osdItemScroll.consumeWheel==1,'All indicators have a native vertical scrollable selector')
 assert(menu.osdItemScroll.Slot.anchors.Maximum.X<menu.preview.Slot.anchors.Minimum.X
  and menu.preview.Slot.anchors.Maximum.X<menu.scroll.Slot.anchors.Minimum.X,'List, preview and inspector occupy separate readable columns')

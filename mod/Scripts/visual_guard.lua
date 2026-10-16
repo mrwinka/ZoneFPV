@@ -6,7 +6,6 @@ local recovery
 local recoverySeconds=5
 local here=debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])')
 M.nativeBridge=here and dofile(here..'native_bridge.lua')
-M.assetLoader=here and dofile(here..'asset_loader.lua')
 local materialObserverRegistered=false
 local liveMaterials
 local materialLimit=32 -- same bounded scalar-entry limit as the native bridge
@@ -59,30 +58,48 @@ local feedbackCollectionPath='/Game/_Stalker_2/Materials/MPC/MPC_PostProcess.MPC
 local collectionKeys={'RadiationNoiseIntensity','RadiationSepiaIntensity','RadiationRandom',
     'RadiationRandomPulsation','VignetteIntensity','ConcussionIntensity','SuppressionIntensity'}
 local concussionCollectionKeys={'ConcussionIntensity','SuppressionIntensity'}
+-- Proven scalar entries in the installed MPC_PostProcess asset, also named by
+-- the five Explosion* PostProcessParam/Processor prototypes. The blast masters
+-- import this collection. They are independent from concussion/suppression and
+-- do not have to appear in CameraComponent.WeightedBlendables at all.
+local blastCollectionKeys={'ExplosionWaterIntensity','ExplosionDirtIntensity','ExplosionRockIntensity',
+    'ExplosionWoodIntensity','ExplosionSandIntensity'}
 local function stopNativeConcussion(g)
     if g.nativeConcussion then pcall(g.nativeConcussion.concussionDisarm,g.nativeConcussion)end
-    g.nativeConcussion=nil;g.nativeConcussionLease=nil;g.nativeConcussionNow=nil
+    g.nativeConcussion=nil;g.nativeConcussionLease=nil;g.nativeConcussionNow=nil;g.nativeConcussionBlast=nil
 end
 local function holdNativeConcussion(g,lease,now)
     if not M.nativeBridge or g.nativeConcussionFailed then return end
     if g.nativeConcussionLease and g.nativeConcussionLease~=lease then stopNativeConcussion(g)end
     if not g.nativeConcussion then g.nativeConcussion=M.nativeBridge.new(here..'../')end
     local ok,result,err
-    if not g.nativeConcussionLease then
+    local wantBlast=lease.blastCaptured and not lease.blastUnavailable
+    if not g.nativeConcussionLease or (wantBlast and not g.nativeConcussionBlast and not g.nativeBlastUnavailable)then
         ok,result,err=pcall(function()
-            local name,secondary
+            local name,secondary;local blasts={}
             for _,entry in ipairs(lease.entries)do
                 if entry.label=='ConcussionIntensity'then name=entry.name end
                 if entry.label=='SuppressionIntensity'then secondary=entry.name end
+                if entry.blast then blasts[#blasts+1]=entry.name:GetComparisonIndex()end
             end
             assert(name and secondary,'concussion/suppression collection names unavailable')
             -- This literal has no numbered suffix. No unverified FName Lua
             -- accessor is required to pass its number=0 native representation.
-            return g.nativeConcussion:concussionArm(lease.context,lease.asset,name:GetComparisonIndex(),0,secondary:GetComparisonIndex(),0)
+            local useBlast=wantBlast and #blasts==5 and not g.nativeBlastUnavailable
+            local armed,why=g.nativeConcussion:concussionArm(lease.context,lease.asset,name:GetComparisonIndex(),0,
+                secondary:GetComparisonIndex(),0,useBlast and blasts or nil)
+            if not armed and why=='native blast scope unsupported'then
+                g.nativeBlastUnavailable=true
+                print('[ZoneFPV] Native blast scope unavailable in this DLL; dual gate and five exact Lua MPC corrections retained\n')
+                armed,why=g.nativeConcussion:concussionArm(lease.context,lease.asset,name:GetComparisonIndex(),0,secondary:GetComparisonIndex(),0)
+                useBlast=false
+            end
+            if armed then g.nativeConcussionBlast=useBlast end
+            return armed,why
         end)
         if ok and result then
             g.nativeConcussionLease=lease
-            print('[ZoneFPV] Native concussion collection gate armed for FPV world\n')
+            print('[ZoneFPV] Native concussion collection gate armed for FPV world; explosionScope='..tostring(g.nativeConcussionBlast==true)..'\n')
         end
     else
         ok,result,err=pcall(g.nativeConcussion.concussionTick,g.nativeConcussion,math.max(0,now-(g.nativeConcussionNow or now)))
@@ -135,6 +152,28 @@ local function holdCollection(g,s,now,concussionOnly)
             for _,entry in ipairs(lease.entries)do values[#values+1]=entry.label..'='..entry.value end
             print('[ZoneFPV] Player collection snapshot: '..table.concat(values,', ')..'\n')
         end
+        if not lease.blastCaptured then
+            -- Upgrade a transferred flight lease without restoring or replaying
+            -- its old concussion amplitudes. Snapshot all five before appending;
+            -- failure must leave the existing two-key recovery available.
+            local additions={}
+            local captured,why=pcall(function()
+                for _,key in ipairs(blastCollectionKeys)do
+                    local name=FName(key)
+                    local value=lease.library:GetScalarParameterValue(lease.context,lease.asset,name)
+                    assert(finite(value),'blast collection unavailable: '..key)
+                    additions[#additions+1]={name=name,label=key,value=value,blast=true}
+                end
+            end)
+            lease.blastCaptured=true
+            if captured then
+                for _,entry in ipairs(additions)do lease.entries[#lease.entries+1]=entry end
+                print('[ZoneFPV] Visual feedback: five verified explosion MPC inputs acquired\n')
+            else
+                lease.blastUnavailable=true
+                print('[ZoneFPV] Recovery explosion collection unavailable: '..tostring(why)..'; concussion recovery retained\n')
+            end
+        end
         holdNativeConcussion(g,lease,now)
         for _,entry in ipairs(lease.entries)do
             local value=lease.library:GetScalarParameterValue(lease.context,lease.asset,entry.name)
@@ -147,6 +186,8 @@ local function holdCollection(g,s,now,concussionOnly)
                     g.concussionCorrections=(g.concussionCorrections or 0)+1
                 elseif entry.label=='SuppressionIntensity'then
                     g.suppressionCorrections=(g.suppressionCorrections or 0)+1
+                elseif entry.blast then
+                    g.blastCorrections=(g.blastCorrections or 0)+1
                 end
                 if not entry.reported then
                     entry.reported=true
@@ -323,14 +364,27 @@ local function holdRadiationBlendables(g,s)
     -- clearing a whole blendable array (which would remove anomaly/weather FX).
     local components={fpv=field(s.camera,'CameraComponent'),player=field(s.pawn,'CameraComponent'),
         native=nativePlayerCamera(g,s)}
+    local ownedMaterials={}
     for _,owner in pairs(components)do
         if valid(owner)then attempt(g,'player feedback blendables '..tostring(owner:GetAddress()),function()
             local list,count=blendableArray(owner)
             if not list then return end
+            -- An empty FPV camera stack says nothing about the game's own
+            -- character feedback sources. Replace legacy discovery only when
+            -- the actual player/native manager exposes its authoritative list.
+            if same(owner,components.player)or same(owner,components.native)then g.ownedFeedbackStack=true end
             local leases=g.radiationBlendables[owner:GetAddress()]
             if not leases then leases={owner=owner,entries={}};g.radiationBlendables[owner:GetAddress()]=leases end
             for i=1,count do
                 local row=unwrap(list[i]);local object=unwrap(field(row,'Object'));local weight=field(row,'Weight')
+                if valid(object)then
+                    ownedMaterials[object:GetAddress()]=object
+                    -- Include the exact blink/vignette scalar variants already
+                    -- supported by FPV, but only in this current local stack.
+                    -- No FindAllOf(MaterialInstanceDynamic) is needed when the
+                    -- native CameraManager exposes the actual owned passes.
+                    for index in pairs(g.materialTargets or {})do captureOwnedMaterial(g,object,index)end
+                end
                 local label,index
                 if finite(weight)then label,index=feedbackLabel(g,object)end
                 -- Identify owned passes even when already weight-zero. Actual
@@ -352,6 +406,7 @@ local function holdRadiationBlendables(g,s)
             end
         end)end
     end
+    if g.ownedFeedbackStack then g.ownedMaterialIDs=ownedMaterials end
 end
 local function restoreRadiationBlendables(g,retireOldBlast)
     for _,leases in pairs(g.radiationBlendables or {})do pcall(function()
@@ -381,6 +436,8 @@ local function observeMaterial(g,context,parameter,value)
     local index=name:GetComparisonIndex() -- numeric comparison, no ToString
     if not (g.materialTargets and g.materialTargets[index]) then return end
     local mid=context:get()
+    if not valid(mid)then return end
+    if g.ownedFeedbackStack and not same(g.ownedMaterialIDs and g.ownedMaterialIDs[mid:GetAddress()],mid)then return end
     local target=materialTarget(g,mid,index)
     if not target or target.feedbackOnly then return end
     local id=mid:GetAddress()
@@ -400,6 +457,13 @@ end
 local function discoverMaterials(g)
     liveMaterials=g
     if not g.materialTargets then return end
+    if g.ownedFeedbackStack then
+        -- In the common native path the current camera stacks are authoritative.
+        -- A full GUObject scan on every FPV entry produces a streaming hitch;
+        -- notifications from unrelated MIDs cannot add authority to this stack.
+        g.materialQueue=nil
+        return
+    end
     if not materialObserverRegistered and type(NotifyOnNewObject)=='function' then
         materialObserverRegistered=pcall(NotifyOnNewObject,'/Script/Engine.MaterialInstanceDynamic',function(mid)
             local live=liveMaterials
@@ -451,7 +515,8 @@ local function discoverMaterials(g)
 end
 local function updateMaterials(g)
     for id,entry in pairs(g.materials)do
-        if not valid(entry.object) or not materialTarget(g,entry.object,entry.index) then
+        if not valid(entry.object) or not materialTarget(g,entry.object,entry.index) or
+            (g.ownedFeedbackStack and not same(g.ownedMaterialIDs and g.ownedMaterialIDs[entry.id],entry.object))then
             g.materials[id]=nil;g.materialCount=g.materialCount-1
         else
             attempt(g,'player material '..tostring(id),function()
@@ -642,7 +707,7 @@ local function updateNativeVisual(g,now)
     if not M.nativeBridge or g.nativeVisualFailed then return end
     local targets,keys={},{}
     for id,entry in pairs(g.materials)do
-        if valid(entry.object) then
+        if valid(entry.object)and (not g.ownedFeedbackStack or same(g.ownedMaterialIDs and g.ownedMaterialIDs[entry.id],entry.object))then
             targets[#targets+1]={mid=entry.object,index=entry.index,number=0}
             keys[#keys+1]=tostring(id)..':'..tostring(entry.index)
         end
@@ -728,8 +793,8 @@ function M.update(s,now,system,_playerMode,clearWeather)
     end
     if not g.hooks then setupHooks(g) end
     scanModifiers(g,cm)
-    discoverMaterials(g)
     holdRadiationBlendables(g,s)
+    discoverMaterials(g)
     updateNativeVisual(g,now)
     updateMaterials(g)
     -- Direct native game calls can bypass the reflected function thunk. Keep
@@ -919,26 +984,14 @@ local function holdRecoverySuppression(r,currentController)
 end
 local function recoveryAsset(r,path)
     local ok,asset=pcall(StaticFindObject,path)
-    local didLoad=false
-    if not ok or not valid(asset)then
-        r.assetLoadAttempts=r.assetLoadAttempts or {}
-        if (r.assetLoadAttempts[path]or 0)<3 and M.assetLoader then
-            r.assetLoadAttempts[path]=(r.assetLoadAttempts[path]or 0)+1
-            r.recoveryAssets=r.recoveryAssets or M.assetLoader.new()
-            local loaded,value,why=pcall(r.recoveryAssets.load,r.recoveryAssets,path)
-            if loaded and valid(value)then
-                asset=value;didLoad=true
-            else
-                r.assetLoadReported=r.assetLoadReported or {}
-                if not r.assetLoadReported[path]then
-                    r.assetLoadReported[path]=true
-                    print('[ZoneFPV] Concussion exact feedback asset load unavailable: '..path..' / '..tostring(loaded and why or value)..'\n')
-                end
-            end
-        end
-    end
-    if not valid(asset)then return end
-    return asset,didLoad
+    -- A registered shake/event already used by the game is enough to retire
+    -- its live instances. Never synchronously load a missing optional variant
+    -- in a flight/exit callback: LoadAsset/LoadAsset_Blocking can stall streaming
+    -- for hundreds of milliseconds, including on every new recovery. The
+    -- bounded once-per-second registry retry below can find late game loads;
+    -- native source removal, MPC gating and owned pass cleanup remain active.
+    if not ok or not valid(asset)then return end
+    return asset,false
 end
 local function concussionClass(r,path)
     local asset,didLoad=recoveryAsset(r,path)
@@ -1010,7 +1063,10 @@ function M.endRecovery(reason)
     previous.active=false
     stopRecoverySource(previous)
     stopNativeConcussion(previous)
-    restoreRadiationBlendables(previous,reason=='deadline')
+    -- An interrupted recovery (immediate re-entry) must not restore the saved
+    -- positive event weight either. This retires only already captured blast
+    -- rows, never a replacement row or a future positive game write.
+    restoreRadiationBlendables(previous,true)
     previous.feedbackCollection=nil
     -- Keep the final zero scalar values; restoring a preflight/blast amplitude
     -- would revive the old stun. Restore blendable weights so genuine new
@@ -1021,6 +1077,7 @@ function M.endRecovery(reason)
         ' nativeCollectionEvents='..tostring(previous.nativeConcussionIntercepted or 0)..
         ' concussionCorrections='..tostring(previous.concussionCorrections or 0)..
         ' suppressionCorrections='..tostring(previous.suppressionCorrections or 0)..
+        ' blastCollectionCorrections='..tostring(previous.blastCorrections or 0)..
         ' suppressionSourceReady='..tostring(previous.suppressionSourceReady==true)..
         ' suppressionSourceCorrections='..tostring(previous.suppressionSourceCorrections or 0)..
         ' nativeSourceReady='..tostring(previous.nativeConcussionSourceReady==true)..
@@ -1089,16 +1146,18 @@ function M.beginRecovery(s,now)
     if lease and valid(lease.context) and same(lease.context,s.world) and valid(lease.asset) and valid(lease.library)then
         local keep,others={},{}
         for _,entry in ipairs(lease.entries)do
-            if entry.label=='ConcussionIntensity'or entry.label=='SuppressionIntensity'then keep[#keep+1]=entry else others[#others+1]=entry end
+            if entry.label=='ConcussionIntensity'or entry.label=='SuppressionIntensity'or entry.blast then keep[#keep+1]=entry else others[#others+1]=entry end
         end
-        if #keep==#concussionCollectionKeys then
-            r.feedbackCollection={asset=lease.asset,library=lease.library,context=lease.context,entries=keep}
+        if #keep==#concussionCollectionKeys or #keep==#concussionCollectionKeys+#blastCollectionKeys then
+            r.feedbackCollection={asset=lease.asset,library=lease.library,context=lease.context,entries=keep,
+                blastCaptured=lease.blastCaptured,blastUnavailable=lease.blastUnavailable}
             lease.entries=others
             -- Transfer the existing gate without a disarm/re-arm gap. The
             -- native scope uses the world/asset/name, not the destroyed camera.
             r.nativeConcussion=g.nativeConcussion
             r.nativeConcussionLease=g.nativeConcussionLease and r.feedbackCollection or nil
             r.nativeConcussionNow=g.nativeConcussionNow
+            r.nativeConcussionBlast=g.nativeConcussionBlast
             g.nativeConcussion=nil;g.nativeConcussionLease=nil;g.nativeConcussionNow=nil
         end
     end

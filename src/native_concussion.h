@@ -20,6 +20,7 @@ struct ConcussionState {
     bool ready=false;
     unsigned error=0;
     std::uint64_t token=0,blocked=0,name=0,secondaryName=0;
+    std::array<std::uint64_t,5> blastNames{};
     std::uintptr_t world=0,collection=0,instance=0;
     ObjectIdentity worldIdentity{},collectionIdentity{},instanceIdentity{};
     std::int32_t worldSerial=0,collectionSerial=0,instanceSerial=0;
@@ -102,18 +103,34 @@ bool concussionFindInstance(ConcussionState& s) {
         (s.secondaryName && !concussionParameter(s.collection,s.secondaryName)) ||
         !artifactRead(s.world+0x1e8,count) || count<1 || count>1024 ||
         !artifactRead(s.world+0x1e0,entries)) return false;
+    // Seven-key recovery is a separate, fixed scope. All five surface keys
+    // must exist in this same captured MPC; a missing/duplicate name cannot
+    // degrade silently to partial protection or widen to arbitrary parameters.
+    if (s.blastNames[0]) {
+        if (!s.secondaryName) return false;
+        for (std::size_t i=0;i<s.blastNames.size();++i) {
+            const auto name=s.blastNames[i];
+            if (!name || name==s.name || name==s.secondaryName || !concussionParameter(s.collection,name)) return false;
+            for (std::size_t j=0;j<i;++j) if (name==s.blastNames[j]) return false;
+        }
+    } else for (const auto name:s.blastNames) if (name) return false;
     for (int i=0;i<count;++i) {
         if (!artifactRead(entries+static_cast<std::uintptr_t>(i)*8,s.instance)) return false;
         if (concussionCapture(s.instance,s.instanceIdentity,s.instanceSerial,true) && concussionBinding(s)) {s.instanceIndex=i;return true;}
     }
     s.instance=0;return false;
 }
+bool concussionSelected(const ConcussionState& s,std::uint64_t name) {
+    if (name==s.name || (s.secondaryName && name==s.secondaryName)) return true;
+    for (const auto blast:s.blastNames) if (blast && name==blast) return true;
+    return false;
+}
 bool __fastcall concussionSetterHook(void* instance,std::uint64_t name,float value) {
     if (quickConcussionInstance.load(std::memory_order_acquire)!=reinterpret_cast<std::uintptr_t>(instance))
         return originalConcussionSetter(instance,name,value);
     AcquireSRWLockExclusive(&concussionLock);
     if (concussion.instance==reinterpret_cast<std::uintptr_t>(instance) &&
-        (name==concussion.name || (concussion.secondaryName && name==concussion.secondaryName)) &&
+        concussionSelected(concussion,name) &&
         GetTickCount64()-concussion.refreshed<=leaseMilliseconds && concussionSame(concussion)) {
         if (value!=0) ++concussion.blocked;
         value=0;
@@ -152,6 +169,7 @@ bool concussionParseControl(const char* text,ConcussionState& candidate) {
     // wrap onto an otherwise valid target in the collection's name table.
     unsigned long long comparison=0,number=0,secondaryComparison=0,secondaryNumber=0;char extra=0;
     bool parsed=false;
+    candidate.blastNames={};
     if (!std::strncmp(text,"ZFPVC21 ",8)) {
         parsed=sscanf_s(text,"ZFPVC21 %llu %llx %llx %llu %llu %c",
             &token,&world,&collection,&comparison,&number,&extra,1u)==5;
@@ -159,6 +177,16 @@ bool concussionParseControl(const char* text,ConcussionState& candidate) {
         parsed=sscanf_s(text,"ZFPVC44 %llu %llx %llx %llu %llu %llu %llu %c",
             &token,&world,&collection,&comparison,&number,&secondaryComparison,&secondaryNumber,&extra,1u)==7 &&
             secondaryComparison>0 && secondaryComparison<0xffffffffu && secondaryComparison!=comparison && secondaryNumber==0;
+    } else if (!std::strncmp(text,"ZFPVC70 ",8)) {
+        std::array<unsigned long long,5> blasts{};
+        parsed=sscanf_s(text,"ZFPVC70 %llu %llx %llx %llu %llu %llu %llu %llu %llu %llu %c",
+            &token,&world,&collection,&comparison,&secondaryComparison,&blasts[0],&blasts[1],&blasts[2],&blasts[3],&blasts[4],&extra,1u)==10 &&
+            secondaryComparison>0 && secondaryComparison<0xffffffffu && secondaryComparison!=comparison;
+        for (std::size_t i=0;i<blasts.size();++i) {
+            if (!blasts[i] || blasts[i]>=0xffffffffu || blasts[i]==comparison || blasts[i]==secondaryComparison) parsed=false;
+            for (std::size_t j=0;j<i;++j) if (blasts[i]==blasts[j]) parsed=false;
+            candidate.blastNames[i]=blasts[i];
+        }
     }
     candidate.token=token;candidate.world=world;candidate.collection=collection;
     candidate.name=static_cast<std::uint64_t>(number)<<32|comparison;
@@ -166,6 +194,9 @@ bool concussionParseControl(const char* text,ConcussionState& candidate) {
     return parsed && token>0 && comparison>0 && comparison<0xffffffffu && number==0;
 }
 }
+// Presence is the only capability signal. An older DLL must never acknowledge
+// a seven-key recovery after accepting only the legacy one/two-key prefix.
+extern "C" __declspec(dllexport) int zonefpv_concussion_blast_scope(void*) {return 0;}
 extern "C" __declspec(dllexport) int zonefpv_concussion_arm(void*) {
     InitOnceExecuteOnce(&initialized,initialize,nullptr,nullptr);
     InitOnceExecuteOnce(&concussionInitialized,initializeConcussion,nullptr,nullptr);

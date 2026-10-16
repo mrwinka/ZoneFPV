@@ -26,7 +26,7 @@ int main(){
     controllerProfiles::ensure(root,1234);{std::ifstream f(root/L"calibration-1234.lua");std::string s;f>>s;assert(s=="custom");}
     assert(controllerProfiles::write(root,1234,1,true));bool backup=false;for(const auto& entry:fs::directory_iterator(root))if(entry.path().filename().wstring().find(L"before-default")!=std::wstring::npos)backup=true;assert(backup);
     std::cout<<"PASS profile detection, mapping, preservation and backup\n";
-    weatherMenu::root=root;controllers::active=1234;
+    weatherMenu::root=root;controllers::requested=1234;controllers::active=1234;weatherMenu::calibrationDevice=1234;
     weatherMenu::calibrationUsed.fill(false);weatherMenu::calibrationControl=0;
     for(int i=0;i<4;++i){
         const int axis=controllerProfiles::presets[1].axes[i]-1;

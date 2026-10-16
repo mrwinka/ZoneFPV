@@ -6,6 +6,7 @@ local flightSettings=dofile(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])
 local pilotSettings=dofile(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])')..'pilot_settings.lua')
 local artifactSettings=dofile(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])')..'artifact_settings.lua')
 local weaponSettings=dofile(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])')..'weapon_settings.lua')
+local batterySettings=dofile(debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])')..'battery_settings.lua')
 local presets={Clearly=true,Cloudy=true,Fogy=true,LightRainy=true,Rainy=true,Thundery=true,Stormy=true}
 function M.parse(line)
     if not line or #line>120 then return end
@@ -30,6 +31,7 @@ function M.parse(line)
     if kind=='signal' then
         if radio.parse(args)~=nil then return id,'FPVSignal '..args end
     end
+    if kind=='battery'and batterySettings.parse('1 '..args)then return id,'FPVBattery '..args end
     if kind=='binoculars' and args=='1' then return id,'FPVBinoculars' end
     if kind=='distance' and args:match('^[0-6]$') then return id,'FPVDistance '..args end
     if kind=='mode' and (args=='acro' or args=='angle' or args=='3d') then return id,'FPVMode '..args end

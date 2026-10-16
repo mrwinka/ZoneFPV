@@ -5,6 +5,11 @@ local function object(fields)
     nextId=nextId+1;local o=fields or {};o.id=nextId;o.alive=true
     function o:IsValid()return self.alive end
     function o:GetAddress()return self.id end
+    o.fname='VisionFixture_'..o.id
+    function o:GetFName()return self.fname end
+    function o:GetClass()return self.class or self end
+    function o:GetAttachParent()return self.parent end
+    function o:IsA()return self.agent==true end
     function o:type()return 'UObject'end
     return o
 end
@@ -46,6 +51,11 @@ loaded[vision.assets.silhouette.path]=object()
 loaded[vision.assets.emissive_fallback.path]=object()
 loaded[vision.assets.silhouette.white_texture]=object()
 loaded['/Script/Engine.MeshComponent']=object()
+loaded['/Script/Engine.MeshComponent'].IsAnyClass=function()return true end
+loaded['/Script/Engine.MeshComponent'].GetFullName=function()return 'Class /Script/Engine.MeshComponent'end
+loaded['/Script/Stalker2.Agent']=object()
+loaded['/Script/Stalker2.Agent'].IsAnyClass=function()return true end
+loaded['/Script/Stalker2.Agent'].GetFullName=function()return 'Class /Script/Stalker2.Agent'end
 StaticFindObject=function(path)return loaded[path] or null end
 LoadAsset=function(path)return loaded[path] or null end
 FName=function(name)return name end
@@ -98,7 +108,10 @@ local function addActor(s,opts)
     function mesh:GetMaterial(slot)return self.slots[slot]end
     function mesh:SetMaterial(slot,material)self.writes=self.writes+1;self.slots[slot]=material end
     local actor=opts.actor or object({Mesh=mesh})
+    actor.agent=(opts.type or 1)<=2
     function actor:GetWorld()return opts.world or world end
+    mesh.owner=actor
+    function mesh:GetOwner()return self.owner end
     local entry={actor=actor,type=opts.type or 1,expired=opts.expired,position={X=opts.x or 0,Y=0,Z=0}}
     s.worldExperiments.entries[#s.worldExperiments.entries+1]=entry
     return mesh,originals,entry
@@ -191,7 +204,9 @@ print('PASS 40 actors, verified slots, world/range/type isolation, appearance ch
 s,pp,original,camera=session()
 local body,bodyOriginal,person=addActor(s,{slots=6})
 local head,headOriginal,headEntry=addActor(s,{slots=4});headEntry.type=3
+head.owner=person.actor
 local armour,armourOriginal,armourEntry=addActor(s,{slots=2});armourEntry.type=3
+armourEntry.actor.agent=false
 local mutant,mutantOriginal,mutantEntry=addActor(s,{type=2,slots=5});mutantEntry.actor.Mesh=nil
 -- Hidden body parts become visible later when the appearance/LOD system swaps.
 head.bVisible=false;head.bHiddenInGame=true
@@ -202,6 +217,7 @@ function person.actor:K2_GetComponentsByClass(class)
  return {body,{type=function()return 'RemoteUnrealParam'end,get=function()return head end},body}
 end
 function person.actor:GetAttachedActors(out,reset,recursive)assert(reset and recursive);out[1]=armourEntry.actor end
+function armourEntry.actor:GetAttachParentActor()return person.actor end
 function armourEntry.actor:K2_GetComponentsByClass()return {armour}end
 function mutantEntry.actor:K2_GetComponentsByClass()return {mutant}end
 ready(s,6);run(s,8)
@@ -239,6 +255,8 @@ function belt:GetNumChildrenComponents()return 1 end
 function belt:GetChildComponent(index)assert(index==0);return treeBody end -- malformed cycle stays bounded
 function jacket:GetOwner()return jacketEntry.actor end
 function belt:GetOwner()return beltEntry.actor end
+function jacketEntry.actor:GetAttachParentActor()return treeEntry.actor end
+function beltEntry.actor:GetAttachParentActor()return jacketEntry.actor end
 function forbidden:GetOwner()return s.pawn end
 ready(s,6)
 for _,mesh in ipairs({treeBody,jacket,belt})do for _,material in pairs(mesh.slots)do assert(material==s.vision.material)end end
@@ -317,6 +335,8 @@ materialBeam.slots[0].BlendMode=1
 materialBeam.slots[0].GetFullName=function()return '/Game/_Stalker_2/VFX/Environment/light/M_FakeFlashLight_Mesh' end
 local flashlight=object({FakeLightBeamComponent=actualBeam})
 local flashlightClass=object();loaded['/Script/Stalker2.FlashlightComponent']=flashlightClass
+function flashlightClass:IsAnyClass()return true end
+function flashlightClass:GetFullName()return 'Class /Script/Stalker2.FlashlightComponent'end
 function beamPerson.actor:K2_GetComponentsByClass(class)
  if class==flashlightClass then return {flashlight}end
  assert(class==loaded['/Script/Engine.MeshComponent']);return {beamBody,actualBeam,materialBeam}
@@ -802,3 +822,97 @@ for mode=0,vision.modes.max do
     end
 end
 print('PASS every vision mode and analog style: immediate disable, unchanged-style sensor switches, repeated enable/disable and exact camera restoration')
+
+do
+    -- Reproduce a loaded modular head that is absent from the scene-child list:
+    -- both StaticFindObject class spellings return genuine invalid wrappers,
+    -- while the actor's already loaded native superclass chain is authoritative.
+    local state=select(1,session())
+    local body,bodyOriginal,person=addActor(state,{slots=1})
+    local face,faceOriginal=addActor(state,{slots=2,type=3})
+    face.owner=person.actor;face.bVisible=false
+    local faceAsset=face:GetSkinnedAsset()
+    function face:GetSkinnedAsset()return null end
+    face.SkinnedAsset=null;face.SkeletalMesh=null;face.SkeletalMeshAsset=null
+    function face:GetSkeletalMeshAsset()return faceAsset end
+    local meshClass=loaded['/Script/Engine.MeshComponent']
+    local agentClass=loaded['/Script/Stalker2.Agent']
+    local skinned=object()
+    function skinned:IsAnyClass()return true end
+    function skinned:GetFullName()return 'Object /Script/Engine:SkeletalMeshComponent'end
+    function skinned:GetSuperStruct()return meshClass end
+    body.class=skinned;face.class=skinned;person.actor.class=agentClass
+    local scans=0
+    function person.actor:K2_GetComponentsByClass(class)
+        assert(class==meshClass);scans=scans+1
+        return array({body,{type=function()return 'RemoteUnrealParam'end,get=function()return face end}})
+    end
+    local findBefore,loadBefore=StaticFindObject,LoadAsset
+    StaticFindObject=function(path)
+        if path:match('^/Script/Engine[%.:]MeshComponent$')or path:match('^/Script/Stalker2[%.:]Agent$')then return null end
+        return findBefore(path)
+    end
+    LoadAsset=function(path)
+        assert(not path:match('MeshComponent$')and not path:match('Agent$'),'native class resolution never synchronously loads a class')
+        return loadBefore(path)
+    end
+    ready(state,6);assert(body.slots[0]==state.vision.material and face.writes==0 and scans>=1)
+    face.bVisible=true;run(state,100,1)
+    assert(face.slots[0]==state.vision.material and face.slots[1]==state.vision.material,
+        'late visible head using GetSkeletalMeshAsset must join thermal body despite invalid lookup/property sentinels')
+    vision.restore(state)
+    StaticFindObject,LoadAsset=findBefore,loadBefore
+    assert(body.slots[0]==bodyOriginal[0]and face.slots[0]==faceOriginal[0]and face.slots[1]==faceOriginal[1])
+end
+print('PASS actual-style missing class/property sentinels: bounded native ancestry resolves modular head; late LOD and GetSkeletalMeshAsset coverage restore exactly')
+
+do
+    local state=select(1,session())
+    local mesh,originals,entry=addActor(state,{slots=2})
+    local parentA,parentB=object(),object()
+    function parentA:GetOwner()return entry.actor end
+    function parentB:GetOwner()return entry.actor end
+    mesh.parent=parentA
+    ready(state,6);assert(mesh.slots[0]==state.vision.material)
+    mesh.parent=parentB;run(state,20,.4)
+    for slot,material in pairs(originals)do assert(mesh.slots[slot]==material,'LOD reparent cleans the captured baseline before rescan')end
+    run(state,40,1.4);assert(mesh.slots[0]==state.vision.material)
+    vision.restore(state)
+    for slot,material in pairs(originals)do assert(mesh.slots[slot]==material,'leaving thermal after LOD reparent cannot retain a sensor as the original outfit')end
+end
+print('PASS same-owner LOD reparent, fresh rescan and final exit preserve the actual outfit instead of capturing thermal material as original')
+
+do
+    local state=select(1,session())
+    local mesh,originals,entry=addActor(state,{slots=2})
+    ready(state,6)
+    local foreign=object();function foreign:GetWorld()return world end
+    mesh.owner=foreign
+    local writes=mesh.writes
+    run(state,100,1);vision.restore(state)
+    assert(mesh.writes==writes,'a transferred component receives neither sensor writes nor stale outfit restoration')
+    assert(entry.actor.bHidden==nil and mesh.bVisible==nil and mesh.bHiddenInGame==nil,
+        'vision coverage must never change native NPC/component visibility')
+
+    state=select(1,session());mesh,originals,entry=addActor(state,{slots=2})
+    ready(state,6);writes=mesh.writes
+    mesh.fname='RecycledMeshSameAddress';run(state,100,1);vision.restore(state)
+    assert(mesh.writes==writes,'recycled mesh cannot reacquire old material authority')
+end
+print('PASS thermal component transfer/recycle safety; no NPC visibility writes or restoration through stale native wrappers')
+
+do
+    local state=select(1,session())
+    local mesh,originals=addActor(state,{slots=1})
+    ready(state,6)
+    -- A new real appearance can reuse an address. Pointer equality must not
+    -- retain the old FName token and then strand our sensor during teardown.
+    originals[0].fname='NewOutfitMaterialAtSameAddress'
+    mesh.slots[0]=originals[0]
+    run(state,20,.4)
+    assert(mesh.slots[0]==state.vision.material)
+    vision.restore(state)
+    assert(mesh.slots[0]==originals[0]and mesh.slots[0].fname=='NewOutfitMaterialAtSameAddress',
+        'fresh appearance identity replaces the captured source token before exact restoration')
+end
+print('PASS same-address appearance material refresh retains the latest source identity for restoration')

@@ -15,8 +15,12 @@ function M.new()
         why[#why+1]=loaded and ('registry found='..tostring(found)..' loaded='..tostring(didLoad)) or tostring(asset)
         -- A wrong-thread error must not be followed by another engine loader.
         if not loaded and tostring(asset):lower():find('game thread',1,true)then return nil,table.concat(why,'; ')end
-        local libraryOK,library=pcall(StaticFindObject,'/Script/Engine.Default__KismetSystemLibrary')
-        if libraryOK and valid(library)then
+        local library
+        for _,libraryPath in ipairs({'/Script/Engine.Default__KismetSystemLibrary','/Script/Engine:Default__KismetSystemLibrary'})do
+            local libraryOK,candidate=pcall(StaticFindObject,libraryPath)
+            if libraryOK and valid(candidate)then library=candidate;break end
+        end
+        if library then
             local blocked,result=pcall(function()
                 local softPath=library:MakeSoftObjectPath(path)
                 local softRef=library:Conv_SoftObjPathToSoftObjRef(softPath)

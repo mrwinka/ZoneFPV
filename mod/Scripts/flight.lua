@@ -1,5 +1,7 @@
 -- ZoneFPV: SI units, body X forward/Y right/Z up; Unreal conversion at boundary.
 local M = {}
+local here=debug.getinfo(1,'S').source:sub(2):match('^(.*[/\\])')
+local battery=dofile(here..'battery.lua')
 local function clamp(x,a,b) return math.max(a,math.min(b,x)) end
 M.clamp=clamp
 -- Low presets use a transmitter-style throttle SCALE limit. Their translation
@@ -88,15 +90,18 @@ function M.step(s,u,c,dt)
         s.v.x,s.v.y=s.v.x*ratio,s.v.y*ratio
     end
     s.previousPreset=preset
-    if not s.linkLost then attitude(s,u,c,dt) end
+    if not s.linkLost and not(s.battery and s.battery.enabled and s.battery.depleted)then attitude(s,u,c,dt) end
     local t=clamp(u.throttle,0,1)*throttle_limit(preset)
     if c.flight_mode=='3d' then
         local signed=clamp(u.throttle,0,1)*2-1
         t=math.abs(signed)<=0.06 and 0 or (signed<0 and -1 or 1)*(math.abs(signed)-0.06)/0.94*throttle_limit(preset)
     end
-    local thrust=c.gravity*c.thrust_to_weight*((1-c.throttle_curve)*t+c.throttle_curve*t*math.abs(t))
+    local power=s.battery and s.battery.enabled and s.battery.powerScale or 1
+    local thrust=c.gravity*c.thrust_to_weight*((1-c.throttle_curve)*t+c.throttle_curve*t*math.abs(t))*power
     s.thrust=s.thrust+(thrust-s.thrust)*(1-math.exp(-dt/c.motor_response))
-    if s.linkLost or preset==0 then s.thrust=0 end
+    if s.linkLost or preset==0 or s.battery and s.battery.enabled and s.battery.depleted then s.thrust=0 end
+    battery.step(s.battery,s,c,dt)
+    if s.battery and s.battery.enabled and s.battery.depleted then s.thrust=0 end
     local q,v,p=s.q,s.v,s.p
     -- Rotate only the body up axis; no vector or quaternion scratch tables.
     local upX=2*(q.x*q.z+q.w*q.y)
@@ -131,7 +136,8 @@ function M.advance(s,u,c,dt,collision)
     local remaining=clamp(dt,0,1)-clamp(dt,0,0.1)
     while remaining>1e-12 do
         local step=math.min(remaining,c.step)
-        if not s.linkLost then attitude(s,u,c,step) end
+        if not s.linkLost and not(s.battery and s.battery.enabled and s.battery.depleted)then attitude(s,u,c,step) end
+        battery.step(s.battery,s,c,step)
         remaining=remaining-step
     end
 end

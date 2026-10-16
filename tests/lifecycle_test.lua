@@ -16,7 +16,15 @@ local legacyNativeKeys={}
 for _,code in ipairs({33,34,35,36,45,46})do legacyNativeKeys[code]=true end
 for code=65,90 do legacyNativeKeys[code]=true end
 for code=112,123 do legacyNativeKeys[code]=true end
-local function object(t) t=t or {};function t:IsValid() return not self.invalid end;function t:GetAddress() return self.address or self end;return t end
+local nextObjectAddress=1000
+local function object(t)
+    t=t or {};nextObjectAddress=nextObjectAddress+1;t.address=t.address or nextObjectAddress
+    t.name=t.name or ('Fixture_'..nextObjectAddress)
+    function t:IsValid()return not self.invalid end
+    function t:GetAddress()return self.address end
+    function t:GetFName()return self.name end
+    return t
+end
 local function reset(options)
     options=options or {};paused=false;timeOffset=0;timeDilation=1;environmentLine=nil;telemetryLine=nil;actionLine=options.actions
     controllerLookups=0
@@ -102,6 +110,7 @@ local function reset(options)
         SetVisibility=function(s,v)s.visibility=v;widgetsHidden=v==1;if v==1 then hideCalls=hideCalls+1 end end})
     FindAllOf=function(name)return name=='PlayerGameHUDView' and {hudRoot} or {} end
     pc=object({Pawn=pawn,move=0,look=0,view=pawn,
+        IsLocalPlayerController=function()return true end,
         bShouldPerformFullTickWhenPaused=false,PrimaryActorTick={bTickEvenWhenPaused=false},
         SetTickableWhenPaused=function(s,b) s.PrimaryActorTick.bTickEvenWhenPaused=b end,
         PlayerCameraManager=object({GetCameraLocation=function() return {X=0,Y=0,Z=200} end,
@@ -119,6 +128,7 @@ local function reset(options)
             end
             s.view=v
         end})
+    pc.Player=object({PlayerController=pc})
     local worldClock,lastRealClock=testClock,testClock
     local function worldTime()
         if not paused then worldClock=worldClock+(testClock-lastRealClock)*timeDilation end
@@ -250,6 +260,10 @@ local function reset(options)
             if mode=='w' then return {write=function(_,value)options.signal=value;return true end,close=function()return true end} end
             if options.signal then return {read=function()return options.signal end,close=function()end} end
             return nil
+        end
+        if path:find('battery-settings.txt',1,true)then
+            if mode=='w'then return {write=function(_,text)options.battery=text;return true end,close=function()return true end}end
+            return {read=function()return options.battery or '1 0 1500 6'end,close=function()return true end}
         end
         if path:find('telemetry.txt',1,true) then return {write=function(_,value)telemetryLine=value;return true end,close=function()end} end
         if path:find('Start-Bridge.ps1',1,true) then return nil end
@@ -448,6 +462,14 @@ local function restored()
     assert(hudRoot.opacity==.75 and hudRoot.visibility==0,'native HUD root snapshot not restored')
     assert(not paused and timeDilation==1 and not pc.bShouldPerformFullTickWhenPaused and not pc.PrimaryActorTick.bTickEvenWhenPaused,'world freeze leaked')
 end
+reset()
+for sequence=1,3001 do
+    line=string.format('1 %d 100000 1 1 32767 32767 0 32767 0 0 0 %d',sequence,sequence)
+    tick()
+end
+assert(controllerLookups==1,'ordinary character play must discover the local player once, not scan UObjects every half second')
+assert(spawned==0 and pc.view==pawn)
+print('PASS 30 seconds of character updates perform one global controller discovery')
 reset();toggle();assert(spawned==1 and pc.view==camera and pawn.disabled);toggle();restored();assert(destroyed==1 and pc.view==pawn)
 print('PASS toggle restores character and destroys camera')
 reset({resetHUDOnCameraDestroy=true});toggle();toggle();restored()
@@ -618,7 +640,7 @@ for hit=1,4 do
     line=string.format('1 %d 100000 1 1 32767 32767 0 32767 0 0 0 %d',hit+1,hit+1);tick()
 end
 local fields={};for token in telemetryLine:gmatch('%S+')do fields[#fields+1]=tonumber(token)end
-assert(fields[1]==5 and fields[14]==1 and fields[16]==1 and fields[18]==1 and fields[19]==0,
+assert(fields[1]==6 and fields[14]==1 and fields[16]==1 and fields[18]==1 and fields[19]==0,
     'incoming reflected attack callbacks must zero drone HP and produce valid loss telemetry')
 for seq=6,350 do
     line=string.format('1 %d 100000 1 1 32767 32767 0 32767 0 0 0 %d',seq,seq);tick()
@@ -921,7 +943,7 @@ print('PASS main external-menu integration: disconnected/focused raw packets, na
 local weapons={}
 local function assertAmmoTelemetry(enabled,remaining)
     local fields={};for token in (telemetryLine or ''):gmatch('%S+')do fields[#fields+1]=tonumber(token)end
-    assert(#fields==26 and fields[1]==5 and fields[23]==(enabled and 1 or 0) and fields[24]==remaining,
+    assert(#fields==36 and fields[1]==6 and fields[23]==(enabled and 1 or 0) and fields[24]==remaining,
         'live flight telemetry must publish actual finite/zero/unlimited weapon capacity')
 end
 local weaponOptions={armament='1 2 1 0 2',bindings='117 119 120 0 0 65 1001',
@@ -989,8 +1011,8 @@ reset({armament='1 1 2.25 0 3',bindings='117 119 120 0 0 65 66',weaponsFixture=k
 toggle();assert(pc.view==camera and not kamikaze.session.noclip,'kamikaze ignores saved noclip without modifying its preference')
 kamikaze.hit=true
 line='1 2 100000 1 1 32767 32767 0 32767 0 0 0 2';tick()
-restored();assert(kamikaze.detonations==1 and destroyed==1 and collisionTraces==2,
-    'first impact runs one native detonation even with ordinary collision disabled')
+restored();assert(kamikaze.detonations==1 and destroyed==1 and collisionTraces==4,
+    'one failed clearance proof and one exact impact run exactly one native detonation even with ordinary collision disabled')
 line='1 3 100000 1 1 32767 32767 0 32767 0 0 0 3';tick();tick()
 assert(kamikaze.detonations==1,'idle callbacks cannot replay the impact explosion')
 
@@ -1291,3 +1313,32 @@ for _,mode in ipairs({0,1})do
 end
 io.open,os.clock,os.time,package.loadlib,os.remove,os.rename=rawOpen,rawClock,rawTime,rawLoadlib,rawRemove,rawRename
 print('PASS saved camera/light permissions: toggle and Hold input gates, immediate off, no auto-activation, idle edits and next-flight behavior')
+local batteryPreferences={inspectPreferences=true,battery='1 1 300 6'}
+reset(batteryPreferences);toggle()
+local batterySession=batteryPreferences.preferenceSnapshot().session
+assert(batterySession.battery.enabled and batterySession.battery.capacity==300 and batterySession.flight.battery==batterySession.battery)
+local batterySeq=1
+local function batteryTick(menu)
+    batterySeq=batterySeq+1
+    line=string.format('2 %d 100000 1 1 32767 32767 0 32767 0 0 0 %d %d',batterySeq,menu and 1 or 0,batterySeq)
+    testClock=testClock+.05;tick()
+end
+batteryTick();assert(batterySession.battery.usedMah>0)
+local charge=batterySession.battery.usedMah;local pack=batterySession.battery
+keys[120]();batteryTick()
+assert(batterySession.battery==pack and batterySession.flight.battery==pack and pack.usedMah>=charge,'F9 preserves the same partly spent pack')
+batteryTick(true);charge=pack.usedMah;batteryTick(true)
+assert(pack.usedMah==charge,'PDA/external menu hold pauses battery simulation')
+batteryTick();assert(pack.usedMah==charge,'focus/menu resume skips the background interval')
+batteryTick();assert(pack.usedMah>charge)
+local command=batteryPreferences.preferenceCommand
+assert(not command('FPVBattery 1 299 6')and pc.view==camera,'invalid battery settings do not interrupt flight')
+assert(command('FPVBattery 1 500 6')and pc.view==pawn and batteryPreferences.battery=='1 1 500 6\n','new pack settings save and end current flight')
+testClock=testClock+.7;batteryTick();toggle()
+batterySession=batteryPreferences.preferenceSnapshot().session
+assert(batterySession.battery.capacity==500 and batterySession.battery.usedMah==0,'new flight starts with a fresh selected battery')
+batterySession.battery.depleted=true;batterySession.battery.emptySeconds=2.99
+batteryTick();assert(pc.view==pawn,'empty battery ends FPV after its bounded emergency fall')
+restored()
+io.open,os.clock,os.time,package.loadlib,os.remove,os.rename=rawOpen,rawClock,rawTime,rawLoadlib,rawRemove,rawRename
+print('PASS main battery integration: selected fresh pack, F9 preservation, pause/resume, validated settings and depleted fall exit')
