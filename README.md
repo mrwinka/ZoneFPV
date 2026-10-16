@@ -2,7 +2,9 @@
 
 Fly a transmitter/gamepad-controlled FPV drone, explore the Zone, scan nearby targets, collect artifacts or equip a combat payload.
 
-**Current version: 0.3.0 RC2 — release candidate.** Download the attached **ZoneFPV-0.3.0-RC2.zip** from [Releases](https://github.com/mrwinka/ZoneFPV/releases), rather than the automatic Source code archive. Older releases, including the author-tested stable 0.2.0, remain available.
+**Current version: 0.3.0 RC2 — release candidate.** Download the attached **ZoneFPV-0.3.0-RC2.zip** from [Releases](https://github.com/mrwinka/ZoneFPV/releases), rather than the automatic Source code archive. Older releases remain available.
+
+**Stable alternative: [0.2.1](https://github.com/mrwinka/ZoneFPV/releases/tag/v0.2.1).** It retains the game files from the author-tested stable 0.2.0 and fixes only installer discovery of unavailable Steam library drives. Extract the full ZIP and run Setup.cmd; manual commands are unnecessary for normal installation. The feature list below describes 0.3.0 RC2.
 
 [Русский](README_RU.md) · [Release notes](RELEASE_NOTES.md) · [Install / troubleshooting](SITE_INSTALL.md) · [Verification status](RELEASE_STATUS.md)
 
