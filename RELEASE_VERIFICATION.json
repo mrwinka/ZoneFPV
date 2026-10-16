@@ -1,7 +1,7 @@
 {
   "release": "0.3.0 RC2",
   "channel": "release candidate",
-  "prepared_utc": "2026-10-16T18:31:20.6039756Z",
+  "prepared_utc": "2026-10-16T19:06:14.7976194Z",
   "published": false,
   "archive": "ZoneFPV-0.3.0-RC2.zip",
   "reviewed_installed_archive_sha256": "E482B330AA742DCA006F6787AF598DF8609ED3E5E1DAF5E970AF30D6ED122650",
@@ -217,24 +217,55 @@
   },
   "installer_tests": {
     "tests_passed": true,
+    "windows_powershell_5_1": true,
+    "test_shell_version": "5.1.26100.9444",
     "fixture_only": true,
     "game_files_modified": false,
-    "battery_preferences_preserved": true,
-    "coverage": [
-      "Repeated full install/update",
-      "All personal preferences including battery/controller/calibration/OSD retained",
-      "Exact previous PAK backup",
-      "Unrelated/base PAKs retained",
-      "Injected copy/hash/retirement/PAK failures rollback exactly",
-      "Missing required PAK fail before mutation",
-      "Uninstall/PAK-only/unrelated-only/repeated removal preservation",
-      "EngineTick runtime flags preserve unrelatedsettings"
+    "runtime_logic_modified": false,
+    "source_hashes": {
+      "Setup.ps1": "D62D08912B5B2D68153C4E44E7F6733D9C8ABB351B570651449F89230D61C829",
+      "Install-Mod.ps1": "8476AA0EFD0ADCE4FD90AE986C690B9937BC03EAD5BC36FADEFA971B02F948FC",
+      "Runtime-Settings.ps1": "E6B131DD7D1D17FC50314FE3A3DC96F89C786336F14BE4628B5E802E74A86A7D",
+      "Uninstall.ps1": "09FF3615DC0311800E8E35C828171A487737B694888102FFA1308B2300865621",
+      "tests/setup_test.ps1": "B47E5F1E21183817899B23E2DA5DF26A889CCBCCDB59BF28BC986A3DF123F1ED",
+      "tests/installer_test.ps1": "87CC567893DA2EBEAD74CC19890ECB952121394443AA14012CAB102F5F0356C5",
+      "tests/uninstaller_test.ps1": "9913238BABCBEE6B7AD278E88FA9D5D434F75AE402A311ECF4DAE5A1ACCCC49F",
+      "tests/runtime_settings_test.ps1": "4942E00E0B49D05EEE74830A940EF7107D646AA963DE017F742D3A4540C0ED58"
+    },
+    "results": [
+      {
+        "exit_code": 0,
+        "test": "tests/setup_test.ps1",
+        "log_sha256": "612A605E7573DD40F3EE0DA880CF71109786B71781CC95AB96F2BD9CA4DF9C78"
+      },
+      {
+        "exit_code": 0,
+        "test": "tests/installer_test.ps1",
+        "log_sha256": "3DECD47EF51C83072758C956C0416AFD4FFD5CA099B3629F3DF5A1625F4315FD"
+      },
+      {
+        "exit_code": 0,
+        "test": "tests/uninstaller_test.ps1",
+        "log_sha256": "27BC17BD22A49F6C3A7C0E304CC241B4BA51915B555051BEAA02A08DCEED3900"
+      },
+      {
+        "exit_code": 0,
+        "test": "tests/runtime_settings_test.ps1",
+        "log_sha256": "4C2BB1D55C6AF8588564E02987376DFA35668F9102EC3B58DBB6F1197DB855A4"
+      }
     ],
-    "logs": {
-      "installer-test.log": "03DF23A225EE2904F6A410C22F60D67DD70F754668CE739F792DA8815FC4708D",
-      "uninstaller-test.log": "C0E6D296D03B3940506F8C1695B7EB6FB5E8EA4901019822E53CC34C22F0F427",
-      "runtime-settings-test.log": "4C2BB1D55C6AF8588564E02987376DFA35668F9102EC3B58DBB6F1197DB855A4"
-    }
+    "coverage": [
+      "Unavailable Steam drive skipped and subsequent valid library discovered once",
+      "Missing-only Steam libraries return no roots for manual fallback",
+      "Explicit -GameRoot bypasses discovery; CheckOnly never installs",
+      "Automatic entrypoint succeeds despite stale Steam library",
+      "Repeated full install/update preserves controller/calibration/OSD/battery settings",
+      "Exact previous PAK backup and unrelated/base PAK preservation",
+      "Copy/hash/retirement/PAK failure rollback",
+      "Missing PAK fails before modification",
+      "Uninstall and repeated/PAK-only/unrelated-only removal preservation",
+      "EngineTick settings preserve unrelated user options"
+    ]
   },
   "native_build_performed_for_rc2": false,
   "helper_build_performed_for_rc2": false,
@@ -401,8 +432,94 @@
     "game assets/loaders",
     "internal debug reports and labels"
   ],
-  "archive_bytes": 1134750,
-  "archive_sha256": "B5D977DC3EAD23E43CC9B732468D6696E31F8E09362CDE23245BE463BF72F89C",
+  "archive_revision": "installer discovery fix 1",
+  "supersedes_archive_sha256": "B5D977DC3EAD23E43CC9B732468D6696E31F8E09362CDE23245BE463BF72F89C",
+  "supersedes_verification_sha256": "9C84102ADE7F4AE3E4C1269C6E7B0A285BE4CF1BC62AE252405A23E20158D15F",
+  "installer_only_change": {
+    "before_sha256": "9759EB8A7D2EE7E59EEF6369944CEB4D1A3D4DC4B8040F2A8BCBA3FDB0A49BE5",
+    "file": "Setup.ps1",
+    "after_sha256": "D62D08912B5B2D68153C4E44E7F6733D9C8ABB351B570651449F89230D61C829",
+    "description": "Skip unavailable Steam library drives; preserve manual selection and explicit -GameRoot"
+  },
+  "runtime_byte_identical_to_published_rc2": true,
+  "companion_byte_identical_to_published_rc2": true,
+  "installer_refresh_tests": {
+    "tests_passed": true,
+    "windows_powershell_5_1": true,
+    "test_shell_version": "5.1.26100.9444",
+    "fixture_only": true,
+    "game_files_modified": false,
+    "runtime_logic_modified": false,
+    "source_hashes": {
+      "Setup.ps1": "D62D08912B5B2D68153C4E44E7F6733D9C8ABB351B570651449F89230D61C829",
+      "Install-Mod.ps1": "8476AA0EFD0ADCE4FD90AE986C690B9937BC03EAD5BC36FADEFA971B02F948FC",
+      "Runtime-Settings.ps1": "E6B131DD7D1D17FC50314FE3A3DC96F89C786336F14BE4628B5E802E74A86A7D",
+      "Uninstall.ps1": "09FF3615DC0311800E8E35C828171A487737B694888102FFA1308B2300865621",
+      "tests/setup_test.ps1": "B47E5F1E21183817899B23E2DA5DF26A889CCBCCDB59BF28BC986A3DF123F1ED",
+      "tests/installer_test.ps1": "87CC567893DA2EBEAD74CC19890ECB952121394443AA14012CAB102F5F0356C5",
+      "tests/uninstaller_test.ps1": "9913238BABCBEE6B7AD278E88FA9D5D434F75AE402A311ECF4DAE5A1ACCCC49F",
+      "tests/runtime_settings_test.ps1": "4942E00E0B49D05EEE74830A940EF7107D646AA963DE017F742D3A4540C0ED58"
+    },
+    "results": [
+      {
+        "exit_code": 0,
+        "test": "tests/setup_test.ps1",
+        "log_sha256": "612A605E7573DD40F3EE0DA880CF71109786B71781CC95AB96F2BD9CA4DF9C78"
+      },
+      {
+        "exit_code": 0,
+        "test": "tests/installer_test.ps1",
+        "log_sha256": "3DECD47EF51C83072758C956C0416AFD4FFD5CA099B3629F3DF5A1625F4315FD"
+      },
+      {
+        "exit_code": 0,
+        "test": "tests/uninstaller_test.ps1",
+        "log_sha256": "27BC17BD22A49F6C3A7C0E304CC241B4BA51915B555051BEAA02A08DCEED3900"
+      },
+      {
+        "exit_code": 0,
+        "test": "tests/runtime_settings_test.ps1",
+        "log_sha256": "4C2BB1D55C6AF8588564E02987376DFA35668F9102EC3B58DBB6F1197DB855A4"
+      }
+    ],
+    "coverage": [
+      "Unavailable Steam drive skipped and subsequent valid library discovered once",
+      "Missing-only Steam libraries return no roots for manual fallback",
+      "Explicit -GameRoot bypasses discovery; CheckOnly never installs",
+      "Automatic entrypoint succeeds despite stale Steam library",
+      "Repeated full install/update preserves controller/calibration/OSD/battery settings",
+      "Exact previous PAK backup and unrelated/base PAK preservation",
+      "Copy/hash/retirement/PAK failure rollback",
+      "Missing PAK fails before modification",
+      "Uninstall and repeated/PAK-only/unrelated-only removal preservation",
+      "EngineTick settings preserve unrelated user options"
+    ]
+  },
+  "previous_installer_tests_reused": {
+    "tests_passed": true,
+    "fixture_only": true,
+    "game_files_modified": false,
+    "battery_preferences_preserved": true,
+    "coverage": [
+      "Repeated full install/update",
+      "All personal preferences including battery/controller/calibration/OSD retained",
+      "Exact previous PAK backup",
+      "Unrelated/base PAKs retained",
+      "Injected copy/hash/retirement/PAK failures rollback exactly",
+      "Missing required PAK fail before mutation",
+      "Uninstall/PAK-only/unrelated-only/repeated removal preservation",
+      "EngineTick runtime flags preserve unrelatedsettings"
+    ],
+    "logs": {
+      "installer-test.log": "03DF23A225EE2904F6A410C22F60D67DD70F754668CE739F792DA8815FC4708D",
+      "uninstaller-test.log": "C0E6D296D03B3940506F8C1695B7EB6FB5E8EA4901019822E53CC34C22F0F427",
+      "runtime-settings-test.log": "4C2BB1D55C6AF8588564E02987376DFA35668F9102EC3B58DBB6F1197DB855A4"
+    }
+  },
+  "lua_native_tests_reused_without_rerun": true,
+  "no_new_gameplay_verification": true,
+  "archive_bytes": 1136193,
+  "archive_sha256": "45CC7827C917A14DAF0446BFA0851E9F74BA8B1B211D55DD1945E6EF3B2BA2B4",
   "archive_files": 132,
   "archive_hashes": {
     "Calibrate.cmd": "0E9C3D137FE5699452B3B96BF5B3DDE319CEAF287A3745B6CA0E17089D4D2BBC",
@@ -532,10 +649,10 @@
     "RELEASE_NOTES.md": "ABAE5515D4CB8D112F6C1899737797DEDB07CB77C4F4770095460415756D030A",
     "Runtime-Settings.ps1": "E6B131DD7D1D17FC50314FE3A3DC96F89C786336F14BE4628B5E802E74A86A7D",
     "Setup.cmd": "A45501EBB0EE471C37D73AA1C6161158ECAFBB5BF8570187DF118B68811D8D19",
-    "Setup.ps1": "9759EB8A7D2EE7E59EEF6369944CEB4D1A3D4DC4B8040F2A8BCBA3FDB0A49BE5",
-    "SHA256SUMS.txt": "FE23D2F0E35BC6883B118F256ED3AA0E898A6D6831D3D51139BD102511112A87",
+    "Setup.ps1": "D62D08912B5B2D68153C4E44E7F6733D9C8ABB351B570651449F89230D61C829",
+    "SHA256SUMS.txt": "0EA0B76EB23A46CE0EA0FB0A40FF45E5451A56CFC7D92F51A0064C58438F2A07",
     "SITE_INSTALL.md": "0FD5FDC0563DA61F16B7517BD4E778F2A07EA55249FEE2D35F3C458E5D6F1C5A",
     "Uninstall.ps1": "09FF3615DC0311800E8E35C828171A487737B694888102FFA1308B2300865621",
-    "VERIFICATION.json": "DFD81ABEC117E1038DA98512560367F1A8651942826B69E117436A91C53DF855"
+    "VERIFICATION.json": "6FBF32649F26783CE433490C3970B894BC58D0D2A515E3077C15055CC0EE03C7"
   }
 }

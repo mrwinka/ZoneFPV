@@ -1,21 +1,30 @@
 param([string]$GameRoot, [switch]$CheckOnly)
 $ErrorActionPreference='Stop'
 function Test-GameRoot([string]$Path){
-    return $Path -and (Test-Path -LiteralPath (Join-Path $Path 'Stalker2\Binaries\Win64\Stalker2-Win64-Shipping.exe'))
+    if([string]::IsNullOrWhiteSpace($Path)){return $false}
+    try {
+        return [bool](Test-Path -LiteralPath (Join-Path $Path 'Stalker2\Binaries\Win64\Stalker2-Win64-Shipping.exe') -PathType Leaf -ErrorAction Stop)
+    } catch {return $false}
 }
 function Find-GameRoots {
     $libraries=[System.Collections.Generic.List[string]]::new()
     $steam=(Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
     if($steam){
         $libraries.Add($steam)
-        $vdf=Join-Path $steam 'steamapps\libraryfolders.vdf'
-        if(Test-Path -LiteralPath $vdf){
-            foreach($match in [regex]::Matches([IO.File]::ReadAllText($vdf),'"path"\s+"([^"]+)"')){$libraries.Add($match.Groups[1].Value.Replace('\\','\'))}
-        }
+        try {
+            $vdf=Join-Path $steam 'steamapps\libraryfolders.vdf'
+            if(Test-Path -LiteralPath $vdf -PathType Leaf -ErrorAction Stop){
+                foreach($match in [regex]::Matches([IO.File]::ReadAllText($vdf),'"path"\s+"([^"]+)"')){$libraries.Add($match.Groups[1].Value.Replace('\\','\'))}
+            }
+        } catch {Write-Verbose 'Steam library list is unavailable; manual game-folder selection remains available.'}
     }
     foreach($library in $libraries | Select-Object -Unique){
-        $path=Join-Path $library 'steamapps\common\S.T.A.L.K.E.R. 2 Heart of Chornobyl'
-        if(Test-GameRoot $path){$path}
+        try {
+            # Steam can retain libraries from disconnected or removed drives.
+            if(!(Test-Path -LiteralPath $library -PathType Container -ErrorAction Stop)){continue}
+            $path=Join-Path $library 'steamapps\common\S.T.A.L.K.E.R. 2 Heart of Chornobyl'
+            if(Test-GameRoot $path){$path}
+        } catch {Write-Verbose 'Skipping an unavailable Steam library.'}
     }
 }
 try {
